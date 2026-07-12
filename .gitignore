@@ -1,2 +1,16 @@
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+
+.env
+.venv/
+venv/
+
+checkpoints/
 Dataset/
 
+*.h5
+*.weights.h5
+
+.idea/
+.vscode/
