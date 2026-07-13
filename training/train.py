@@ -39,26 +39,11 @@ CAPTION_FILE = (
     "annotations/"
     "captions_train2017.json"
 )
-
-
-TRAINING_LIMIT = 30000
-
-
 BATCH_SIZE = 32
-
-
-FEATURE_CACHE_BATCH_SIZE = 64
-
-
-EPOCHS = 15
-
-
+FEATURE_CACHE_BATCH_SIZE = 128
+EPOCHS = 25
 VALIDATION_SPLIT = 0.10
-
-
 RANDOM_SEED = 42
-
-
 FEATURE_CACHE_DIR = (
     "/content/visiongpt_feature_cache"
 )
