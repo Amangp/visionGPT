@@ -1,6 +1,7 @@
 import sys
 import os
 import datetime
+import random
 
 sys.path.append(
     os.path.dirname(
@@ -10,91 +11,139 @@ sys.path.append(
     )
 )
 
-
 import tensorflow as tf
-
 
 from models.visiongpt import VisionGPT
 
 from training.trainer import Trainer
-
-from training.coco_training_loader import COCOTrainingLoader
-
 from training.data_pipeline import DataPipeline
-
-
-from preprocessing.image_preprocessor import ImagePreprocessor
+from training.coco_training_loader import COCOTrainingLoader
 
 from preprocessing.text_preprocessor import TextPreprocessor
 
 
-# =====================================================
+# =========================================================
 # CONFIGURATION
-# =====================================================
+# =========================================================
+
+IMAGE_FOLDER = (
+    "Dataset/COCO/train2017/train2017"
+)
+
+CAPTION_FILE = (
+    "Dataset/COCO/"
+    "annotations_trainval2017/"
+    "annotations/"
+    "captions_train2017.json"
+)
 
 
-VISIONGPT_VERSION = "v2"
+TRAINING_LIMIT = 30000
 
-TRAINING_LIMIT = 5000
+BATCH_SIZE = 32
 
-BATCH_SIZE = 8
+EPOCHS = 15
 
-EPOCHS = 5
+VALIDATION_SPLIT = 0.10
 
+RANDOM_SEED = 42
+
+
+# =========================================================
+# MAIN
+# =========================================================
 
 def main():
 
-
     print(
         "\n"
-        "========================================"
+        "=========================================="
     )
 
     print(
-        f"Starting VisionGPT {VISIONGPT_VERSION} Training"
+        "Starting VisionGPT v2.4 Training"
     )
 
     print(
-        "========================================"
-        "\n"
+        "=========================================="
     )
 
 
-    # =================================================
-    # 1. LOAD COCO DATA
-    # =================================================
-
+    # =====================================================
+    # 1. GPU CHECK
+    # =====================================================
 
     print(
-        "[1/7] Loading COCO training data..."
+        "\n[1/9] Checking GPU..."
     )
 
+    gpus = tf.config.list_physical_devices(
+        "GPU"
+    )
+
+    print(
+        "Available GPUs:",
+        gpus
+    )
+
+    if gpus:
+
+        print(
+            "GPU training enabled"
+        )
+
+    else:
+
+        print(
+            "WARNING: No GPU detected"
+        )
+
+
+    # =====================================================
+    # 2. LOAD COCO DATA
+    # =====================================================
+
+    print(
+        "\n[2/9] Loading COCO training data..."
+    )
 
     loader = COCOTrainingLoader(
 
-        image_folder=(
-            "Dataset/COCO/train2017/train2017"
-        ),
+        image_folder=IMAGE_FOLDER,
 
-        caption_file=(
-            "Dataset/COCO/"
-            "annotations_trainval2017/"
-            "annotations/"
-            "captions_train2017.json"
-        ),
+        caption_file=CAPTION_FILE,
 
         limit=TRAINING_LIMIT
 
     )
 
-
     pairs = loader.load()
 
-
     print(
-        f"Loaded {len(pairs)} training examples"
+        f"Loaded {len(pairs)} caption-image pairs"
     )
 
+
+    # =====================================================
+    # 3. SHUFFLE DATA
+    # =====================================================
+
+    print(
+        "\n[3/9] Shuffling dataset..."
+    )
+
+    random.seed(
+        RANDOM_SEED
+    )
+
+    random.shuffle(
+        pairs
+    )
+
+
+    # =====================================================
+    # 4. SPLIT IMAGE PATHS AND CAPTIONS
+    # =====================================================
 
     image_paths = [
 
@@ -104,7 +153,6 @@ def main():
 
     ]
 
-
     captions = [
 
         item[1]
@@ -112,32 +160,6 @@ def main():
         for item in pairs
 
     ]
-
-
-    # =================================================
-    # 2. INITIALIZE PREPROCESSORS
-    # =================================================
-
-
-    print(
-        "\n[2/7] Initializing preprocessors..."
-    )
-
-
-    image_processor = ImagePreprocessor()
-
-
-    text_processor = TextPreprocessor()
-
-
-    # =================================================
-    # 3. BUILD VOCABULARY
-    # =================================================
-
-
-    print(
-        "\n[3/7] Building vocabulary..."
-    )
 
 
     captions = [
@@ -149,8 +171,76 @@ def main():
     ]
 
 
+    # =====================================================
+    # 5. TRAIN / VALIDATION SPLIT
+    # =====================================================
+
+    print(
+        "\n[4/9] Creating train-validation split..."
+    )
+
+    validation_size = int(
+
+        len(image_paths)
+        *
+        VALIDATION_SPLIT
+
+    )
+
+
+    train_image_paths = (
+        image_paths[
+            validation_size:
+        ]
+    )
+
+    train_captions = (
+        captions[
+            validation_size:
+        ]
+    )
+
+
+    val_image_paths = (
+        image_paths[
+            :validation_size
+        ]
+    )
+
+    val_captions = (
+        captions[
+            :validation_size
+        ]
+    )
+
+
+    print(
+        "Training examples:",
+        len(train_image_paths)
+    )
+
+    print(
+        "Validation examples:",
+        len(val_image_paths)
+    )
+
+
+    # =====================================================
+    # 6. BUILD VOCABULARY
+    # =====================================================
+
+    print(
+        "\n[5/9] Building vocabulary..."
+    )
+
+    text_processor = TextPreprocessor()
+
+
+    # IMPORTANT:
+    # Vocabulary is built only using training captions
+
     text_processor.build_vocabulary(
-        captions
+        train_captions
     )
 
 
@@ -159,158 +249,112 @@ def main():
     )
 
 
-    vocabulary = (
+    vocab_size = len(
+
         text_processor
         .vectorizer
         .get_vocabulary()
+
     )
 
+
+    print(
+        "Vocabulary size:",
+        vocab_size
+    )
 
     print(
         "Vocabulary saved successfully"
     )
 
 
-    print(
-        f"Vocabulary size: {len(vocabulary)}"
-    )
-
-
-    # =================================================
-    # 4. PREPROCESS IMAGES
-    # =================================================
-
+    # =====================================================
+    # 7. TOKENIZE CAPTIONS
+    # =====================================================
 
     print(
-        "\n[4/7] Processing images..."
+        "\n[6/9] Tokenizing captions..."
     )
 
 
-    processed_images = []
-
-
-    total_images = len(
-        image_paths
-    )
-
-
-    for index, path in enumerate(
-        image_paths
-    ):
-
-
-        image = (
-            image_processor.process(
-                path
-            )
-        )
-
-
-        processed_images.append(
-            image
-        )
-
-
-        if (
-            (index + 1) % 500 == 0
-            or
-            index + 1 == total_images
-        ):
-
-
-            print(
-
-                f"Processed "
-                f"{index + 1}/"
-                f"{total_images} images"
-
-            )
-
-
-    images = tf.stack(
-        processed_images
-    )
-
-
-    print(
-        "Image tensor shape:",
-        images.shape
-    )
-
-
-    # =================================================
-    # 5. PROCESS CAPTIONS
-    # =================================================
-
-
-    print(
-        "\n[5/7] Processing captions..."
-    )
-
-
-    text_tokens = (
+    train_tokens = (
         text_processor.process(
-            captions
+            train_captions
+        )
+    )
+
+
+    val_tokens = (
+        text_processor.process(
+            val_captions
         )
     )
 
 
     print(
-        "Caption tensor shape:",
-        text_tokens.shape
+        "Train token shape:",
+        train_tokens.shape
+    )
+
+    print(
+        "Validation token shape:",
+        val_tokens.shape
     )
 
 
-    # =================================================
-    # 6. CREATE AUTOREGRESSIVE DATASET
-    # =================================================
-
+    # =====================================================
+    # 8. CREATE STREAMING DATASETS
+    # =====================================================
 
     print(
-        "\n[6/7] Creating autoregressive dataset..."
+        "\n[7/9] Creating streaming datasets..."
     )
 
 
     pipeline = DataPipeline(
 
-        batch_size=BATCH_SIZE,
-
-        shuffle_buffer=1000
+        batch_size=BATCH_SIZE
 
     )
 
 
-    dataset = pipeline.create(
+    train_dataset = pipeline.create(
 
-        images,
+        train_image_paths,
 
-        text_tokens
+        train_tokens,
+
+        training=True
 
     )
 
 
-    # -------------------------------------------------
-    # VERIFY DATASET SHAPES
-    # -------------------------------------------------
+    val_dataset = pipeline.create(
+
+        val_image_paths,
+
+        val_tokens,
+
+        training=False
+
+    )
 
 
-    for inputs, targets in dataset.take(1):
+    # Test one batch
 
+    for inputs, targets in train_dataset.take(1):
 
-        batch_images, decoder_inputs = inputs
-
+        images, decoder_inputs = inputs
 
         print(
             "Batch image shape:",
-            batch_images.shape
+            images.shape
         )
-
 
         print(
             "Decoder input shape:",
             decoder_inputs.shape
         )
-
 
         print(
             "Target shape:",
@@ -318,42 +362,34 @@ def main():
         )
 
 
-    # =================================================
-    # 7. CREATE VISIONGPT V2
-    # =================================================
-
-
-    print(
-        "\n[7/7] Creating VisionGPT v2..."
-    )
-
-
-    vocab_size = len(
-    text_processor.vectorizer.get_vocabulary()
-    )
+    # =====================================================
+    # 9. CREATE VISIONGPT
+    # =====================================================
 
     print(
-        f"Vocabulary size: {vocab_size}"
+        "\n[8/9] Creating VisionGPT v2.4..."
     )
+
 
     model = VisionGPT(
+
         vocab_size=vocab_size
+
     )
 
 
-    # -------------------------------------------------
-    # BUILD MODEL
-    # -------------------------------------------------
+    # Build model variables
 
-
-    dummy_image = tf.random.normal(
+    dummy_image = tf.zeros(
 
         (
             1,
             224,
             224,
             3
-        )
+        ),
+
+        dtype=tf.float32
 
     )
 
@@ -365,12 +401,12 @@ def main():
             29
         ),
 
-        dtype=tf.int32
+        dtype=tf.int64
 
     )
 
 
-    dummy_output = model(
+    output = model(
 
         (
             dummy_image,
@@ -384,62 +420,38 @@ def main():
 
     print(
         "VisionGPT output shape:",
-        dummy_output.shape
+        output.shape
     )
 
 
     print(
-        "\nVisionGPT v2 architecture built successfully"
+        "VisionGPT v2.4 architecture built successfully"
     )
 
 
-    # =================================================
-    # CREATE TRAINER
-    # =================================================
-
+    # =====================================================
+    # TRAINER
+    # =====================================================
 
     trainer = Trainer(
-        model
+
+        model,
+
+        learning_rate=0.001
+
     )
 
 
     trainer.compile()
 
 
-    # =================================================
-    # TRAIN MODEL
-    # =================================================
-
-
-    print(
-        "\n"
-        "========================================"
-    )
-
+    # =====================================================
+    # CALLBACKS
+    # =====================================================
 
     print(
-        "VISIONGPT V2 TRAINING STARTED"
+        "\n[9/9] Preparing training callbacks..."
     )
-
-
-    print(
-        "========================================"
-        "\n"
-    )
-
-
-    history = trainer.train(
-
-        dataset,
-
-        epochs=EPOCHS
-
-    )
-
-
-    # =================================================
-    # SAVE VERSIONED CHECKPOINT
-    # =================================================
 
 
     os.makedirs(
@@ -451,82 +463,176 @@ def main():
     )
 
 
-    timestamp = (
+    version = datetime.datetime.now().strftime(
 
-        datetime
-        .datetime
-        .now()
-        .strftime(
-            "%Y_%m_%d_%H_%M"
+        "%Y_%m_%d_%H_%M"
+
+    )
+
+
+    checkpoint_path = (
+
+        "checkpoints/"
+
+        f"visiongpt_v2_4_best_{version}.weights.h5"
+
+    )
+
+
+    checkpoint_callback = (
+
+        tf.keras.callbacks.ModelCheckpoint(
+
+            filepath=checkpoint_path,
+
+            monitor="val_loss",
+
+            save_best_only=True,
+
+            save_weights_only=True,
+
+            mode="min",
+
+            verbose=1
+
         )
 
     )
 
 
-    save_path = (
+    early_stopping = (
 
-        "checkpoints/"
+        tf.keras.callbacks.EarlyStopping(
 
-        f"visiongpt_{VISIONGPT_VERSION}_"
+            monitor="val_loss",
 
-        f"{timestamp}.weights.h5"
+            patience=3,
+
+            restore_best_weights=True,
+
+            verbose=1
+
+        )
 
     )
 
 
-    model.save_weights(
-        save_path
+    reduce_lr = (
+
+        tf.keras.callbacks.ReduceLROnPlateau(
+
+            monitor="val_loss",
+
+            factor=0.5,
+
+            patience=2,
+
+            min_lr=1e-6,
+
+            verbose=1
+
+        )
+
     )
 
+
+    callbacks = [
+
+        checkpoint_callback,
+
+        early_stopping,
+
+        reduce_lr
+
+    ]
+
+
+    # =====================================================
+    # TRAIN
+    # =====================================================
 
     print(
         "\n"
-        "========================================"
+        "=========================================="
+    )
+
+    print(
+        "VISIONGPT v2.4 TRAINING STARTED"
+    )
+
+    print(
+        "=========================================="
     )
 
 
     print(
-        "TRAINING COMPLETED"
+        "Training pairs:",
+        len(train_image_paths)
+    )
+
+    print(
+        "Validation pairs:",
+        len(val_image_paths)
+    )
+
+    print(
+        "Batch size:",
+        BATCH_SIZE
+    )
+
+    print(
+        "Maximum epochs:",
+        EPOCHS
+    )
+
+    print(
+        "Checkpoint:",
+        checkpoint_path
+    )
+
+
+    history = model.fit(
+
+        train_dataset,
+
+        validation_data=val_dataset,
+
+        epochs=EPOCHS,
+
+        callbacks=callbacks
+
+    )
+
+
+    # =====================================================
+    # TRAINING COMPLETE
+    # =====================================================
+
+    print(
+        "\n"
+        "=========================================="
+    )
+
+    print(
+        "VISIONGPT v2.4 TRAINING COMPLETED"
+    )
+
+    print(
+        "=========================================="
     )
 
 
     print(
-        "========================================"
+        "Best weights saved at:"
+    )
+
+    print(
+        checkpoint_path
     )
 
 
     print(
-        f"VisionGPT Version: "
-        f"{VISIONGPT_VERSION}"
-    )
-
-
-    print(
-        f"Training Examples: "
-        f"{TRAINING_LIMIT}"
-    )
-
-
-    print(
-        f"Epochs: "
-        f"{EPOCHS}"
-    )
-
-
-    print(
-        f"Batch Size: "
-        f"{BATCH_SIZE}"
-    )
-
-
-    print(
-        f"Weights saved at: "
-        f"{save_path}"
-    )
-
-
-    print(
-        "\nVisionGPT v2 saved successfully 🚀"
+        "\nVisionGPT v2.4 trained successfully 🚀"
     )
 
 
