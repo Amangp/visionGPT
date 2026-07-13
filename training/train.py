@@ -1,7 +1,6 @@
 import sys
 import os
 import datetime
-import random
 import shutil
 
 sys.path.append(
@@ -20,6 +19,7 @@ from training.trainer import Trainer
 from training.data_pipeline import DataPipeline
 from training.coco_training_loader import COCOTrainingLoader
 from training.feature_cache import FeatureCache
+from training.image_splitter import ImageLevelSplitter
 
 from preprocessing.text_preprocessor import TextPreprocessor
 
@@ -66,12 +66,15 @@ FEATURE_CACHE_DIR = (
 
 DRIVE_BACKUP_DIR = (
     "/content/drive/MyDrive/"
-    "VisionGPT/v2.5"
+    "VisionGPT/v2.6"
 )
 
 
+CONTEXT_DROPOUT_RATE = 0.10
+
+
 # =========================================================
-# BEST CHECKPOINT DRIVE BACKUP CALLBACK
+# DRIVE BACKUP CALLBACK
 # =========================================================
 
 class DriveCheckpointBackup(
@@ -104,24 +107,19 @@ class DriveCheckpointBackup(
 
         logs = logs or {}
 
-
         val_loss = logs.get(
             "val_loss"
         )
-
 
         if val_loss is None:
 
             return
 
-
         if val_loss >= self.best_val_loss:
 
             return
 
-
         self.best_val_loss = val_loss
-
 
         if not os.path.exists(
             self.checkpoint_path
@@ -134,7 +132,6 @@ class DriveCheckpointBackup(
 
             return
 
-
         if not os.path.exists(
             "/content/drive/MyDrive"
         ):
@@ -146,12 +143,13 @@ class DriveCheckpointBackup(
 
             return
 
-
         os.makedirs(
-            self.drive_backup_dir,
-            exist_ok=True
-        )
 
+            self.drive_backup_dir,
+
+            exist_ok=True
+
+        )
 
         checkpoint_destination = os.path.join(
 
@@ -163,7 +161,6 @@ class DriveCheckpointBackup(
 
         )
 
-
         vocab_destination = os.path.join(
 
             self.drive_backup_dir,
@@ -171,7 +168,6 @@ class DriveCheckpointBackup(
             "vocab.json"
 
         )
-
 
         shutil.copy2(
 
@@ -181,7 +177,6 @@ class DriveCheckpointBackup(
 
         )
 
-
         shutil.copy2(
 
             self.vocab_path,
@@ -190,13 +185,12 @@ class DriveCheckpointBackup(
 
         )
 
-
         print(
             "\n=========================================="
         )
 
         print(
-            "BEST MODEL BACKED UP TO DRIVE"
+            "BEST V2.6 MODEL BACKED UP TO DRIVE"
         )
 
         print(
@@ -226,12 +220,11 @@ class DriveCheckpointBackup(
 def main():
 
     print(
-        "\n"
-        "=========================================="
+        "\n=========================================="
     )
 
     print(
-        "Starting VisionGPT v2.5 Training"
+        "Starting VisionGPT v2.6 Training"
     )
 
     print(
@@ -247,17 +240,14 @@ def main():
         "\n[1/11] Checking GPU..."
     )
 
-
     gpus = tf.config.list_physical_devices(
         "GPU"
     )
-
 
     print(
         "Available GPUs:",
         gpus
     )
-
 
     if gpus:
 
@@ -280,7 +270,6 @@ def main():
         "\n[2/11] Checking COCO dataset..."
     )
 
-
     if not os.path.exists(
         IMAGE_FOLDER
     ):
@@ -291,7 +280,6 @@ def main():
             + IMAGE_FOLDER
 
         )
-
 
     if not os.path.exists(
         CAPTION_FILE
@@ -304,11 +292,9 @@ def main():
 
         )
 
-
     print(
         "Image folder found"
     )
-
 
     print(
         "Caption file found"
@@ -323,7 +309,6 @@ def main():
         "\n[3/11] Loading COCO training data..."
     )
 
-
     loader = COCOTrainingLoader(
 
         image_folder=IMAGE_FOLDER,
@@ -334,110 +319,136 @@ def main():
 
     )
 
-
     pairs = loader.load()
 
-
     print(
-        f"Loaded {len(pairs)} caption-image pairs"
+        "Loaded caption-image pairs:",
+        len(pairs)
     )
 
 
     # =====================================================
-    # 4. SHUFFLE DATA
+    # 4. IMAGE-LEVEL SPLIT
     # =====================================================
 
     print(
-        "\n[4/11] Shuffling dataset..."
+        "\n[4/11] Creating image-level split..."
     )
 
+    splitter = ImageLevelSplitter(
 
-    random.seed(
-        RANDOM_SEED
+        validation_split=VALIDATION_SPLIT,
+
+        random_seed=RANDOM_SEED
+
     )
 
-
-    random.shuffle(
+    train_pairs, val_pairs = splitter.split(
         pairs
     )
 
+    train_image_set = {
 
-    print(
-        "Random seed:",
-        RANDOM_SEED
+        image_path
+
+        for image_path, caption in train_pairs
+
+    }
+
+    val_image_set = {
+
+        image_path
+
+        for image_path, caption in val_pairs
+
+    }
+
+    image_overlap = (
+
+        train_image_set
+
+        &
+
+        val_image_set
+
     )
 
+    print(
+        "\nSplit verification:"
+    )
+
+    print(
+        "Unique training images:",
+        len(train_image_set)
+    )
+
+    print(
+        "Unique validation images:",
+        len(val_image_set)
+    )
+
+    print(
+        "Image overlap:",
+        len(image_overlap)
+    )
+
+    if image_overlap:
+
+        raise RuntimeError(
+
+            "Training and validation "
+            "image overlap detected"
+
+        )
+
 
     # =====================================================
-    # 5. SPLIT IMAGE PATHS AND CAPTIONS
+    # 5. EXTRACT PATHS AND CAPTIONS
     # =====================================================
 
-    image_paths = [
+    print(
+        "\n[5/11] Preparing captions..."
+    )
 
-        item[0]
+    train_image_paths = [
 
-        for item in pairs
+        image_path
+
+        for image_path, caption in train_pairs
 
     ]
 
-
-    captions = [
-
-        item[1]
-
-        for item in pairs
-
-    ]
-
-
-    captions = [
+    train_captions = [
 
         f"startseq {caption} endseq"
 
-        for caption in captions
+        for image_path, caption in train_pairs
 
     ]
 
+    val_image_paths = [
 
-    validation_size = int(
+        image_path
 
-        len(image_paths)
+        for image_path, caption in val_pairs
 
-        *
-
-        VALIDATION_SPLIT
-
-    )
-
-
-    train_image_paths = image_paths[
-        validation_size:
     ]
 
+    val_captions = [
 
-    train_captions = captions[
-        validation_size:
+        f"startseq {caption} endseq"
+
+        for image_path, caption in val_pairs
+
     ]
-
-
-    val_image_paths = image_paths[
-        :validation_size
-    ]
-
-
-    val_captions = captions[
-        :validation_size
-    ]
-
 
     print(
-        "Training examples:",
+        "Training caption pairs:",
         len(train_image_paths)
     )
 
-
     print(
-        "Validation examples:",
+        "Validation caption pairs:",
         len(val_image_paths)
     )
 
@@ -447,24 +458,20 @@ def main():
     # =====================================================
 
     print(
-        "\n[5/11] Building vocabulary..."
+        "\n[6/11] Building vocabulary..."
     )
 
-
     text_processor = TextPreprocessor()
-
 
     text_processor.build_vocabulary(
         train_captions
     )
 
-
     text_processor.save_vocab(
         "vocab.json"
     )
 
-
-    vocab_size = len(
+    vocabulary = (
 
         text_processor
         .vectorizer
@@ -472,15 +479,63 @@ def main():
 
     )
 
+    vocab_size = len(
+        vocabulary
+    )
+
+    word_to_index = {
+
+        word: index
+
+        for index, word in enumerate(
+            vocabulary
+        )
+
+    }
+
+    mask_token_id = word_to_index.get(
+        "[UNK]",
+        1
+    )
+
+    start_token_id = word_to_index.get(
+        "startseq"
+    )
+
+    end_token_id = word_to_index.get(
+        "endseq"
+    )
+
+    if start_token_id is None:
+
+        raise ValueError(
+            "startseq token not found"
+        )
+
+    if end_token_id is None:
+
+        raise ValueError(
+            "endseq token not found"
+        )
 
     print(
         "Vocabulary size:",
         vocab_size
     )
 
+    print(
+        "Mask token ID:",
+        mask_token_id
+    )
 
     print(
-        "Vocabulary saved successfully"
+        "Start token ID:",
+        start_token_id
+    )
+
+    print(
+        "End token ID:",
+        end_token_id
     )
 
 
@@ -489,25 +544,21 @@ def main():
     # =====================================================
 
     print(
-        "\n[6/11] Tokenizing captions..."
+        "\n[7/11] Tokenizing captions..."
     )
-
 
     train_tokens = text_processor.process(
         train_captions
     )
 
-
     val_tokens = text_processor.process(
         val_captions
     )
-
 
     print(
         "Train token shape:",
         train_tokens.shape
     )
-
 
     print(
         "Validation token shape:",
@@ -516,13 +567,12 @@ def main():
 
 
     # =====================================================
-    # 8. CREATE EFFICIENTNET FEATURE CACHE
+    # 8. CACHE EFFICIENTNET FEATURES
     # =====================================================
 
     print(
-        "\n[7/11] Caching EfficientNet features..."
+        "\n[8/11] Preparing EfficientNet feature cache..."
     )
-
 
     feature_cache = FeatureCache(
 
@@ -531,7 +581,6 @@ def main():
         batch_size=FEATURE_CACHE_BATCH_SIZE
 
     )
-
 
     all_image_paths = list(
 
@@ -547,31 +596,23 @@ def main():
 
     )
 
-
     print(
         "Unique images selected:",
         len(all_image_paths)
     )
-
 
     feature_cache.cache_features(
         all_image_paths
     )
 
 
-    print(
-        "EfficientNet feature caching completed"
-    )
-
-
     # =====================================================
-    # 9. CREATE CACHED DATASETS
+    # 9. CREATE DATASETS
     # =====================================================
 
     print(
-        "\n[8/11] Creating cached datasets..."
+        "\n[9/11] Creating cached datasets..."
     )
-
 
     pipeline = DataPipeline(
 
@@ -580,7 +621,6 @@ def main():
         batch_size=BATCH_SIZE
 
     )
-
 
     train_dataset = pipeline.create(
 
@@ -592,7 +632,6 @@ def main():
 
     )
 
-
     val_dataset = pipeline.create(
 
         val_image_paths,
@@ -603,32 +642,23 @@ def main():
 
     )
 
-
-    # =====================================================
-    # TEST ONE CACHED BATCH
-    # =====================================================
-
     for inputs, targets in train_dataset.take(1):
 
         visual_features, decoder_inputs = inputs
 
-
         print(
             "\nCached batch verification"
         )
-
 
         print(
             "Visual feature shape:",
             visual_features.shape
         )
 
-
         print(
             "Decoder input shape:",
             decoder_inputs.shape
         )
-
 
         print(
             "Target shape:",
@@ -637,20 +667,26 @@ def main():
 
 
     # =====================================================
-    # 10. CREATE VISIONGPT V2.5
+    # 10. CREATE VISIONGPT V2.6
     # =====================================================
 
     print(
-        "\n[9/11] Creating VisionGPT v2.5..."
+        "\n[10/11] Creating VisionGPT v2.6..."
     )
-
 
     model = VisionGPT(
 
-        vocab_size=vocab_size
+        vocab_size=vocab_size,
+
+        context_dropout_rate=CONTEXT_DROPOUT_RATE,
+
+        mask_token_id=mask_token_id,
+
+        start_token_id=start_token_id,
+
+        end_token_id=end_token_id
 
     )
-
 
     dummy_features = tf.zeros(
 
@@ -665,7 +701,6 @@ def main():
 
     )
 
-
     dummy_text = tf.ones(
 
         (
@@ -676,7 +711,6 @@ def main():
         dtype=tf.int64
 
     )
-
 
     output = model(
 
@@ -691,27 +725,24 @@ def main():
 
     )
 
-
     print(
         "VisionGPT output shape:",
         output.shape
     )
 
-
     print(
-        "VisionGPT v2.5 architecture "
+        "VisionGPT v2.6 architecture "
         "built successfully"
     )
 
 
     # =====================================================
-    # TRAINER
+    # 11. COMPILE
     # =====================================================
 
     print(
-        "\n[10/11] Compiling VisionGPT v2.5..."
+        "\n[11/11] Compiling VisionGPT v2.6..."
     )
-
 
     trainer = Trainer(
 
@@ -721,18 +752,12 @@ def main():
 
     )
 
-
     trainer.compile()
 
 
     # =====================================================
     # CALLBACKS
     # =====================================================
-
-    print(
-        "\n[11/11] Preparing training callbacks..."
-    )
-
 
     os.makedirs(
 
@@ -742,23 +767,20 @@ def main():
 
     )
 
-
     version = datetime.datetime.now().strftime(
 
         "%Y_%m_%d_%H_%M"
 
     )
 
-
     checkpoint_path = (
 
         "checkpoints/"
 
-        f"visiongpt_v2_5_best_"
+        f"visiongpt_v2_6_best_"
         f"{version}.weights.h5"
 
     )
-
 
     checkpoint_callback = (
         tf.keras.callbacks.ModelCheckpoint(
@@ -778,7 +800,6 @@ def main():
         )
     )
 
-
     early_stopping = (
         tf.keras.callbacks.EarlyStopping(
 
@@ -792,7 +813,6 @@ def main():
 
         )
     )
-
 
     reduce_lr = (
         tf.keras.callbacks.ReduceLROnPlateau(
@@ -810,7 +830,6 @@ def main():
         )
     )
 
-
     drive_backup = DriveCheckpointBackup(
 
         checkpoint_path=checkpoint_path,
@@ -820,7 +839,6 @@ def main():
         drive_backup_dir=DRIVE_BACKUP_DIR
 
     )
-
 
     callbacks = [
 
@@ -840,68 +858,66 @@ def main():
     # =====================================================
 
     print(
-        "\n"
-        "=========================================="
+        "\n=========================================="
     )
-
 
     print(
-        "VISIONGPT v2.5 TRAINING STARTED"
+        "VISIONGPT v2.6 TRAINING STARTED"
     )
-
 
     print(
         "=========================================="
     )
-
 
     print(
         "Training pairs:",
         len(train_image_paths)
     )
 
-
     print(
         "Validation pairs:",
         len(val_image_paths)
     )
 
-
     print(
-        "Unique cached images:",
-        len(all_image_paths)
+        "Unique training images:",
+        len(train_image_set)
     )
 
+    print(
+        "Unique validation images:",
+        len(val_image_set)
+    )
+
+    print(
+        "Image overlap:",
+        len(image_overlap)
+    )
+
+    print(
+        "Context dropout rate:",
+        CONTEXT_DROPOUT_RATE
+    )
 
     print(
         "Batch size:",
         BATCH_SIZE
     )
 
-
-    print(
-        "Feature cache batch size:",
-        FEATURE_CACHE_BATCH_SIZE
-    )
-
-
     print(
         "Maximum epochs:",
         EPOCHS
     )
-
 
     print(
         "Checkpoint:",
         checkpoint_path
     )
 
-
     print(
         "Drive backup directory:",
         DRIVE_BACKUP_DIR
     )
-
 
     history = model.fit(
 
@@ -936,7 +952,6 @@ def main():
 
             )
 
-
             final_checkpoint_destination = os.path.join(
 
                 DRIVE_BACKUP_DIR,
@@ -947,7 +962,6 @@ def main():
 
             )
 
-
             shutil.copy2(
 
                 checkpoint_path,
@@ -955,7 +969,6 @@ def main():
                 final_checkpoint_destination
 
             )
-
 
             shutil.copy2(
 
@@ -968,17 +981,14 @@ def main():
 
             )
 
-
             print(
                 "\nFinal Drive backup verified"
             )
-
 
             print(
                 "Checkpoint:",
                 final_checkpoint_destination
             )
-
 
             print(
                 "Vocabulary:",
@@ -990,37 +1000,31 @@ def main():
 
 
     # =====================================================
-    # TRAINING COMPLETE
+    # COMPLETE
     # =====================================================
 
     print(
-        "\n"
-        "=========================================="
+        "\n=========================================="
     )
-
 
     print(
-        "VISIONGPT v2.5 TRAINING COMPLETED"
+        "VISIONGPT v2.6 TRAINING COMPLETED"
     )
-
 
     print(
         "=========================================="
     )
-
 
     print(
         "Best weights saved at:"
     )
 
-
     print(
         checkpoint_path
     )
 
-
     print(
-        "\nVisionGPT v2.5 trained successfully 🚀"
+        "\nVisionGPT v2.6 trained successfully 🚀"
     )
 
 
