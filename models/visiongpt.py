@@ -33,7 +33,8 @@ class VisionGPT(tf.keras.Model):
 
     def call(
         self,
-        inputs
+        inputs,
+        training=False
     ):
 
         image, text = inputs
@@ -44,17 +45,15 @@ class VisionGPT(tf.keras.Model):
             )
         )
 
-        image_features = (
-            self.fusion_layer(
-                image_features
-            )
+        image_features = self.fusion_layer(
+            image_features,
+            training=training
         )
 
-        output = (
-            self.answer_decoder(
-                text,
-                image_features
-            )
+        output = self.answer_decoder(
+            text,
+            image_features,
+            training=training
         )
 
         return output
