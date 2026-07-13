@@ -300,8 +300,6 @@ def main():
 
         caption_file=CAPTION_FILE,
 
-        limit=TRAINING_LIMIT
-
     )
 
     pairs = loader.load()
