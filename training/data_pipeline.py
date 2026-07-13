@@ -1,132 +1,74 @@
 import tensorflow as tf
+import numpy as np
 
 
 class DataPipeline:
 
     def __init__(
         self,
-        image_processor,
-        text_processor,
-        batch_size=8,
+        feature_cache,
+        batch_size=32,
         shuffle_buffer=10000
     ):
 
-        self.image_processor = image_processor
-
-        self.text_processor = text_processor
-
+        self.feature_cache = feature_cache
         self.batch_size = batch_size
-
         self.shuffle_buffer = shuffle_buffer
 
 
     # =====================================================
-    # PROCESS SINGLE SAMPLE
+    # LOAD CACHED FEATURE
     # =====================================================
 
-    def process_sample(
+    def load_cached_feature(
         self,
-        image_path,
-        caption
+        image_path
     ):
 
-        # =================================================
-        # READ IMAGE
-        # =================================================
+        feature = tf.numpy_function(
 
-        image = tf.io.read_file(
+            func=self.feature_cache.load_feature,
+
+            inp=[image_path],
+
+            Tout=tf.float32
+
+        )
+
+        # Cached EfficientNetB0 feature shape
+
+        feature.set_shape(
+            (
+                7,
+                7,
+                1280
+            )
+        )
+
+        return feature
+
+
+    # =====================================================
+    # PREPARE TRAINING EXAMPLE
+    # =====================================================
+
+    def prepare_example(
+        self,
+        image_path,
+        tokens
+    ):
+
+        image_features = self.load_cached_feature(
             image_path
         )
 
+        decoder_input = tokens[:-1]
 
-        # =================================================
-        # DECODE IMAGE
-        # =================================================
-
-        image = tf.image.decode_jpeg(
-            image,
-            channels=3
-        )
-
-
-        # =================================================
-        # CONVERT IMAGE TO FLOAT32
-        # =================================================
-
-        image = tf.cast(
-            image,
-            tf.float32
-        )
-
-
-        # =================================================
-        # RESIZE IMAGE
-        # =================================================
-
-        image = tf.image.resize(
-            image,
-            (
-                224,
-                224
-            )
-        )
-
-
-        # =================================================
-        # IMPORTANT
-        #
-        # DO NOT DIVIDE BY 255
-        #
-        # EfficientNet handles preprocessing internally.
-        # =================================================
-
-
-        # =================================================
-        # PROCESS CAPTION
-        # =================================================
-
-        caption_tokens = (
-            self.text_processor
-            .vectorizer(
-                tf.expand_dims(
-                    caption,
-                    axis=0
-                )
-            )
-        )
-
-
-        caption_tokens = tf.squeeze(
-            caption_tokens,
-            axis=0
-        )
-
-
-        # =================================================
-        # AUTOREGRESSIVE DECODER INPUT
-        #
-        # startseq a dog is running
-        # =================================================
-
-        decoder_input = caption_tokens[
-            :-1
-        ]
-
-
-        # =================================================
-        # AUTOREGRESSIVE TARGET
-        #
-        # a dog is running endseq
-        # =================================================
-
-        target = caption_tokens[
-            1:
-        ]
-
+        target = tokens[1:]
 
         return (
             (
-                image,
+                image_features,
                 decoder_input
             ),
             target
@@ -137,23 +79,21 @@ class DataPipeline:
     # CREATE DATASET
     # =====================================================
 
-    def create_dataset(
+    def create(
         self,
         image_paths,
-        captions,
+        text_tokens,
         training=True
     ):
 
         print(
-            "\nCreating TensorFlow dataset..."
+            "\nCreating cached feature dataset..."
         )
-
 
         print(
             "Samples:",
             len(image_paths)
         )
-
 
         print(
             "Batch size:",
@@ -161,38 +101,27 @@ class DataPipeline:
         )
 
 
-        # =================================================
-        # CREATE BASE DATASET
-        # =================================================
-
         dataset = tf.data.Dataset.from_tensor_slices(
             (
                 image_paths,
-                captions
+                text_tokens
             )
         )
 
 
         # =================================================
-        # SHUFFLE BEFORE MAP
-        #
-        # Shuffle paths and captions instead of full images.
-        # This uses less memory.
+        # SHUFFLE
         # =================================================
 
         if training:
 
             shuffle_size = min(
+
                 len(image_paths),
+
                 self.shuffle_buffer
+
             )
-
-
-            print(
-                "Shuffle buffer:",
-                shuffle_size
-            )
-
 
             dataset = dataset.shuffle(
 
@@ -202,16 +131,19 @@ class DataPipeline:
 
             )
 
+            print(
+                "Shuffle buffer:",
+                shuffle_size
+            )
+
 
         # =================================================
-        # PARALLEL IMAGE + TEXT PROCESSING
-        #
-        # Multiple CPU workers decode and resize images.
+        # LOAD CACHED FEATURES IN PARALLEL
         # =================================================
 
         dataset = dataset.map(
 
-            self.process_sample,
+            self.prepare_example,
 
             num_parallel_calls=tf.data.AUTOTUNE,
 
@@ -221,7 +153,7 @@ class DataPipeline:
 
 
         # =================================================
-        # BATCH DATASET
+        # BATCH
         # =================================================
 
         dataset = dataset.batch(
@@ -235,9 +167,6 @@ class DataPipeline:
 
         # =================================================
         # PREFETCH
-        #
-        # CPU prepares the next batch while GPU trains
-        # the current batch.
         # =================================================
 
         dataset = dataset.prefetch(
@@ -248,14 +177,12 @@ class DataPipeline:
 
 
         print(
-            "Parallel mapping: AUTOTUNE"
+            "Cached feature loading: parallel"
         )
-
 
         print(
             "Prefetch: AUTOTUNE"
         )
-
 
         print(
             "Dataset created successfully"
@@ -263,157 +190,3 @@ class DataPipeline:
 
 
         return dataset
-
-
-# =========================================================
-# TEST PIPELINE
-# =========================================================
-
-if __name__ == "__main__":
-
-    from preprocessing.image_preprocessor import (
-        ImagePreprocessor
-    )
-
-    from preprocessing.text_preprocessor import (
-        TextPreprocessor
-    )
-
-
-    print(
-        "\n=========================================="
-    )
-
-    print(
-        "Testing VisionGPT DataPipeline"
-    )
-
-    print(
-        "=========================================="
-    )
-
-
-    image_processor = ImagePreprocessor()
-
-
-    text_processor = TextPreprocessor()
-
-
-    sample_captions = [
-
-        "startseq a dog is running endseq",
-
-        "startseq a man is walking endseq"
-
-    ]
-
-
-    # =====================================================
-    # BUILD TEST VOCABULARY
-    # =====================================================
-
-    text_processor.vectorizer.adapt(
-
-        tf.data.Dataset.from_tensor_slices(
-            sample_captions
-        ).batch(
-            2
-        )
-
-    )
-
-
-    sample_images = [
-
-        (
-            "Dataset/COCO/train2017/train2017/"
-            "000000391895.jpg"
-        ),
-
-        (
-            "Dataset/COCO/train2017/train2017/"
-            "000000522418.jpg"
-        )
-
-    ]
-
-
-    pipeline = DataPipeline(
-
-        image_processor=image_processor,
-
-        text_processor=text_processor,
-
-        batch_size=2
-
-    )
-
-
-    dataset = pipeline.create_dataset(
-
-        image_paths=sample_images,
-
-        captions=sample_captions,
-
-        training=True
-
-    )
-
-
-    # =====================================================
-    # INSPECT ONE BATCH
-    # =====================================================
-
-    for inputs, targets in dataset.take(1):
-
-        images, decoder_inputs = inputs
-
-
-        print(
-            "\n=========================================="
-        )
-
-
-        print(
-            "Image shape:",
-            images.shape
-        )
-
-
-        print(
-            "Decoder input shape:",
-            decoder_inputs.shape
-        )
-
-
-        print(
-            "Target shape:",
-            targets.shape
-        )
-
-
-        print(
-            "Image dtype:",
-            images.dtype
-        )
-
-
-        print(
-            "Image min:",
-            tf.reduce_min(
-                images
-            ).numpy()
-        )
-
-
-        print(
-            "Image max:",
-            tf.reduce_max(
-                images
-            ).numpy()
-        )
-
-
-        print(
-            "=========================================="
-        )
