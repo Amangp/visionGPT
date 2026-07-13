@@ -13,7 +13,7 @@ def masked_loss(
     loss_function = (
         tf.keras.losses
         .SparseCategoricalCrossentropy(
-            from_logits=False,
+            from_logits=True,
             reduction="none"
         )
     )
