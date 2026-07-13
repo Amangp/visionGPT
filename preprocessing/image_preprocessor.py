@@ -16,72 +16,92 @@ class ImagePreprocessor:
             image_path
     ):
 
-        # --------------------------------------------------
-        # Read image
-        # --------------------------------------------------
+        # ==========================================
+        # READ IMAGE
+        # ==========================================
 
         image = tf.io.read_file(
             image_path
         )
 
 
-        # --------------------------------------------------
-        # Decode JPEG
-        # --------------------------------------------------
+        # ==========================================
+        # AUTO-DECODE JPEG / PNG / GIF / BMP
+        # ==========================================
 
-        image = tf.image.decode_jpeg(
+        image = tf.io.decode_image(
+
             image,
-            channels=3
+
+            channels=3,
+
+            expand_animations=False
+
         )
 
 
-        # --------------------------------------------------
-        # Resize image
-        # --------------------------------------------------
-
-        image = tf.image.resize(
-            image,
-            self.image_size
-        )
-
-
-        # --------------------------------------------------
-        # Convert to float32
-        #
-        # IMPORTANT:
-        # EfficientNetB0 expects pixel values in [0, 255]
-        #
-        # DO NOT divide by 255
-        # --------------------------------------------------
+        # ==========================================
+        # CONVERT TYPE
+        # ==========================================
 
         image = tf.cast(
+
             image,
+
             tf.float32
+
         )
+
+
+        # ==========================================
+        # RESIZE
+        # ==========================================
+
+        image = tf.image.resize(
+
+            image,
+
+            self.image_size
+
+        )
+
+
+        # IMPORTANT:
+        # DO NOT divide by 255
+        #
+        # EfficientNet preprocessing is handled
+        # by the model architecture.
 
 
         return image
+
 
 
 if __name__ == "__main__":
 
     processor = ImagePreprocessor()
 
+
     img = processor.process(
-        r"C:\Users\1243a\OneDrive\Desktop\visionGPT\Dataset\COCO\train2017\train2017\000000391895.jpg"
+
+        "test_images/person.jpg"
+
     )
+
 
     print(
         "Image shape:",
         img.shape
     )
 
+
     print(
-        "Minimum pixel value:",
+        "Minimum value:",
         tf.reduce_min(img).numpy()
     )
 
+
     print(
-        "Maximum pixel value:",
+        "Maximum value:",
         tf.reduce_max(img).numpy()
     )
