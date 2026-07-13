@@ -508,8 +508,8 @@ if __name__ == "__main__":
 
     MODEL_PATH = (
 
-        "checkpoints/"
-        "visiongpt_v2_4_best_2026_07_13_06_16.weights.h5"
+        
+        "checkpoints/visiongpt_v2_4_best_2026_07_13_09_25.weights.h5"
 
     )
 
