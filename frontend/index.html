@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>VisionGPT</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar" id="sidebar">
+      <div class="brand">
+        <div class="brand-mark">V</div>
+        <span>VisionGPT</span>
+      </div>
+      <button class="new-chat" id="newChatBtn"><span>＋</span> New analysis</button>
+      <div class="side-label">Recent</div>
+      <div class="history" id="history"></div>
+      <div class="sidebar-footer">
+        <div class="status-dot"></div>
+        <div><strong>VisionGPT</strong><small>Interface development build</small></div>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <button class="icon-btn menu-btn" id="menuBtn">☰</button>
+        <div>
+          <h1>VisionGPT</h1>
+          <p>Visual intelligence workspace</p>
+        </div>
+        <div class="api-status" id="apiStatus"><i></i><span>Checking API</span></div>
+      </header>
+
+      <section class="chat" id="chat">
+        <div class="hero" id="hero">
+          <div class="orb"><span>V</span></div>
+          <h2>What do you see?</h2>
+          <p>Upload an image for an automatic description, or ask a question about anything visible in it.</p>
+          <div class="capabilities">
+            <span>Image understanding</span>
+            <span>Visual Q&amp;A</span>
+            <span>Auto description</span>
+          </div>
+        </div>
+        <div class="messages" id="messages"></div>
+      </section>
+
+      <section class="composer-wrap">
+        <div class="preview-card hidden" id="previewCard">
+          <img id="imagePreview" alt="Selected image preview" />
+          <div class="preview-meta">
+            <strong id="fileName">image.jpg</strong>
+            <small id="fileSize">0 KB</small>
+          </div>
+          <button class="remove-image" id="removeImageBtn" aria-label="Remove image">×</button>
+        </div>
+
+        <div class="drop-overlay hidden" id="dropOverlay">
+          <div>Drop image to analyze</div>
+        </div>
+
+        <form class="composer" id="visionForm">
+          <input id="imageInput" type="file" accept="image/png,image/jpeg,image/webp" hidden />
+          <button type="button" class="attach-btn" id="attachBtn" title="Upload image">＋</button>
+          <textarea id="questionInput" rows="1" placeholder="Upload an image, then ask anything about it..."></textarea>
+          <button type="submit" class="send-btn" id="sendBtn" disabled aria-label="Send">
+            <svg viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+          </button>
+        </form>
+        <p class="composer-note">VisionGPT may make mistakes. Verify important visual details.</p>
+      </section>
+    </main>
+  </div>
+  <script src="script.js"></script>
+</body>
+</html>

@@ -12,6 +12,20 @@ sys.path.append(
 )
 
 import tensorflow as tf
+gpus = tf.config.list_physical_devices(
+    "GPU"
+)
+
+for gpu in gpus:
+    tf.config.experimental.set_memory_growth(
+        gpu,
+        True
+    )
+
+print(
+    "Available GPUs:",
+    gpus
+)
 
 from models.visiongpt import VisionGPT
 
@@ -39,13 +53,13 @@ CAPTION_FILE = (
     "annotations/"
     "captions_train2017.json"
 )
-BATCH_SIZE = 32
-FEATURE_CACHE_BATCH_SIZE = 128
+BATCH_SIZE = 8
+FEATURE_CACHE_BATCH_SIZE = 16
 EPOCHS = 25
 VALIDATION_SPLIT = 0.10
 RANDOM_SEED = 42
 FEATURE_CACHE_DIR = (
-    "/content/visiongpt_feature_cache"
+    "feature_cache"
 )
 
 
@@ -303,7 +317,19 @@ def main():
     )
 
     pairs = loader.load()
+    FULL_DATASET_SIZE = len(pairs)
 
+    TRAINING_LIMIT = 100000
+
+    pairs = pairs[:TRAINING_LIMIT]
+
+    print(
+        f"Full COCO pairs: {FULL_DATASET_SIZE}"
+    )
+
+    print(
+        f"Selected training pairs: {len(pairs)}"
+    )
     print(
         "Loaded caption-image pairs:",
         len(pairs)
@@ -557,13 +583,6 @@ def main():
         "\n[8/11] Preparing EfficientNet feature cache..."
     )
 
-    feature_cache = FeatureCache(
-
-        cache_dir=FEATURE_CACHE_DIR,
-
-        batch_size=FEATURE_CACHE_BATCH_SIZE
-
-    )
 
     all_image_paths = list(
 
@@ -584,10 +603,6 @@ def main():
         len(all_image_paths)
     )
 
-    feature_cache.cache_features(
-        all_image_paths
-    )
-
 
     # =====================================================
     # 9. CREATE DATASETS
@@ -598,8 +613,6 @@ def main():
     )
 
     pipeline = DataPipeline(
-
-        feature_cache=feature_cache,
 
         batch_size=BATCH_SIZE
 

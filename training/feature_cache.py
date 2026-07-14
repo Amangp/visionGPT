@@ -1,3 +1,4 @@
+import gc
 import os
 
 import numpy as np
@@ -11,33 +12,34 @@ class FeatureCache:
     def __init__(
         self,
         cache_dir="feature_cache",
-        batch_size=64
+        batch_size=32,
     ):
 
         self.cache_dir = cache_dir
-
         self.batch_size = batch_size
 
         os.makedirs(
             self.cache_dir,
-            exist_ok=True
+            exist_ok=True,
         )
 
-        print(
-            "\nCreating VisionEncoder..."
-        )
+        print()
+        print("Creating VisionEncoder...")
 
         self.vision_encoder = VisionEncoder()
 
         self.vision_encoder.trainable = False
 
-        print(
-            "VisionEncoder ready"
-        )
+        print("VisionEncoder ready")
 
         print(
             "Feature cache directory:",
-            self.cache_dir
+            self.cache_dir,
+        )
+
+        print(
+            "Feature cache batch size:",
+            self.batch_size,
         )
 
 
@@ -47,8 +49,17 @@ class FeatureCache:
 
     def get_cache_path(
         self,
-        image_path
+        image_path,
     ):
+
+        if isinstance(
+            image_path,
+            bytes,
+        ):
+
+            image_path = image_path.decode(
+                "utf-8"
+            )
 
         image_name = os.path.basename(
             image_path
@@ -60,42 +71,159 @@ class FeatureCache:
 
         return os.path.join(
             self.cache_dir,
-            image_id + ".npy"
+            image_id + ".npy",
         )
 
 
     # =====================================================
-    # PROCESS IMAGE
+    # PROCESS SINGLE IMAGE
     # =====================================================
 
     def process_image(
         self,
-        image_path
+        image_path,
     ):
 
         image = tf.io.read_file(
             image_path
         )
 
-        image = tf.image.decode_jpeg(
+        image = tf.io.decode_image(
             image,
-            channels=3
+            channels=3,
+            expand_animations=False,
         )
 
         image = tf.cast(
             image,
-            tf.float32
+            tf.float32,
         )
 
         image = tf.image.resize(
             image,
             (
                 224,
-                224
+                224,
+            ),
+            antialias=True,
+        )
+
+        image.set_shape(
+            (
+                224,
+                224,
+                3,
             )
         )
 
         return image
+
+
+    # =====================================================
+    # PROCESS ONE BATCH
+    # =====================================================
+
+    def process_batch(
+        self,
+        batch_paths,
+    ):
+
+        images = []
+
+        valid_paths = []
+
+        for image_path in batch_paths:
+
+            try:
+
+                image = self.process_image(
+                    image_path
+                )
+
+                images.append(
+                    image
+                )
+
+                valid_paths.append(
+                    image_path
+                )
+
+            except Exception as error:
+
+                print()
+
+                print(
+                    "Skipping image:"
+                )
+
+                print(
+                    image_path
+                )
+
+                print(
+                    "Reason:",
+                    error,
+                )
+
+
+        if not images:
+
+            return 0
+
+
+        image_batch = tf.stack(
+            images,
+            axis=0,
+        )
+
+
+        features = self.vision_encoder.model(
+            image_batch,
+            training=False,
+        )
+
+
+        features = features.numpy()
+
+
+        saved_count = 0
+
+
+        for image_path, feature in zip(
+            valid_paths,
+            features,
+        ):
+
+            cache_path = self.get_cache_path(
+                image_path
+            )
+
+
+            np.save(
+                cache_path,
+                feature.astype(
+                    np.float16
+                ),
+            )
+
+
+            saved_count += 1
+
+
+        # -------------------------------------------------
+        # Explicitly release batch memory
+        # -------------------------------------------------
+
+        del images
+
+        del valid_paths
+
+        del image_batch
+
+        del features
+
+
+        return saved_count
 
 
     # =====================================================
@@ -104,8 +232,18 @@ class FeatureCache:
 
     def cache_features(
         self,
-        image_paths
+        image_paths,
     ):
+
+        print()
+        print("=" * 50)
+        print("VISIONGPT STREAMING FEATURE CACHE")
+        print("=" * 50)
+
+
+        # -------------------------------------------------
+        # Remove duplicate images
+        # -------------------------------------------------
 
         unique_image_paths = list(
             dict.fromkeys(
@@ -113,34 +251,30 @@ class FeatureCache:
             )
         )
 
+
         total_images = len(
             unique_image_paths
         )
 
-        print(
-            "\n=========================================="
-        )
-
-        print(
-            "VISIONGPT FEATURE CACHING"
-        )
-
-        print(
-            "=========================================="
-        )
 
         print(
             "Unique images:",
-            total_images
+            total_images,
         )
 
         print(
             "Batch size:",
-            self.batch_size
+            self.batch_size,
         )
 
 
-        uncached_paths = []
+        # -------------------------------------------------
+        # Count cache state without holding another
+        # massive path list
+        # -------------------------------------------------
+
+        already_cached = 0
+
 
         for image_path in unique_image_paths:
 
@@ -148,149 +282,193 @@ class FeatureCache:
                 image_path
             )
 
-            if not os.path.exists(
+            if os.path.exists(
                 cache_path
             ):
 
-                uncached_paths.append(
-                    image_path
-                )
+                already_cached += 1
+
+
+        need_caching = (
+            total_images
+            -
+            already_cached
+        )
 
 
         print(
             "Already cached:",
-            total_images - len(
-                uncached_paths
-            )
+            already_cached,
         )
 
         print(
             "Need caching:",
-            len(
-                uncached_paths
-            )
+            need_caching,
         )
 
 
-        if not uncached_paths:
+        if need_caching == 0:
+
+            print()
 
             print(
-                "\nAll image features already cached"
+                "All image features already cached"
             )
 
             return
 
 
-        dataset = (
-            tf.data.Dataset
-            .from_tensor_slices(
-                uncached_paths
-            )
-        )
+        # -------------------------------------------------
+        # TRUE STREAMING CACHE
+        # -------------------------------------------------
+
+        batch_paths = []
+
+        processed = already_cached
+
+        newly_cached = 0
+
+        skipped = 0
 
 
-        dataset = dataset.map(
-
-            self.process_image,
-
-            num_parallel_calls=tf.data.AUTOTUNE,
-
-            deterministic=False
-
-        )
-
-
-        dataset = dataset.batch(
-            self.batch_size
-        )
-
-
-        dataset = dataset.prefetch(
-            tf.data.AUTOTUNE
-        )
-
-
-        processed = 0
-
-
-        for batch_index, image_batch in enumerate(
-            dataset
+        for image_index, image_path in enumerate(
+            unique_image_paths
         ):
 
-            features = self.vision_encoder.model(
-
-                image_batch,
-
-                training=False
-
+            cache_path = self.get_cache_path(
+                image_path
             )
 
 
-            features = features.numpy()
-
-
-            batch_start = (
-                batch_index
-                *
-                self.batch_size
-            )
-
-
-            batch_paths = uncached_paths[
-
-                batch_start:
-
-                batch_start
-                +
-                features.shape[0]
-
-            ]
-
-
-            for image_path, feature in zip(
-                batch_paths,
-                features
+            # Resume support
+            if os.path.exists(
+                cache_path
             ):
 
-                cache_path = self.get_cache_path(
-                    image_path
-                )
+                continue
 
 
-                np.save(
-
-                    cache_path,
-
-                    feature.astype(
-                        np.float16
-                    )
-
-                )
-
-
-                processed += 1
-
-
-            print(
-
-                f"\rCached "
-                f"{processed}/"
-                f"{len(uncached_paths)} images",
-
-                end="",
-
-                flush=True
-
+            batch_paths.append(
+                image_path
             )
 
 
+            # ---------------------------------------------
+            # Process full batch
+            # ---------------------------------------------
+
+            if len(batch_paths) >= self.batch_size:
+
+                expected_count = len(
+                    batch_paths
+                )
+
+
+                saved_count = self.process_batch(
+                    batch_paths
+                )
+
+
+                newly_cached += saved_count
+
+                processed += saved_count
+
+                skipped += (
+                    expected_count
+                    -
+                    saved_count
+                )
+
+
+                print(
+                    f"\rCached "
+                    f"{processed}/"
+                    f"{total_images} images "
+                    f"| New: {newly_cached} "
+                    f"| Skipped: {skipped}",
+                    end="",
+                    flush=True,
+                )
+
+
+                batch_paths.clear()
+
+
+                # -----------------------------------------
+                # Periodic garbage collection
+                # -----------------------------------------
+
+                if newly_cached % 1024 < self.batch_size:
+
+                    gc.collect()
+
+
+        # -------------------------------------------------
+        # Process final partial batch
+        # -------------------------------------------------
+
+        if batch_paths:
+
+            expected_count = len(
+                batch_paths
+            )
+
+
+            saved_count = self.process_batch(
+                batch_paths
+            )
+
+
+            newly_cached += saved_count
+
+            processed += saved_count
+
+            skipped += (
+                expected_count
+                -
+                saved_count
+            )
+
+
+            batch_paths.clear()
+
+
+        gc.collect()
+
+
+        print()
+        print()
+
+        print("=" * 50)
+        print("FEATURE CACHING COMPLETED")
+        print("=" * 50)
+
         print(
-            "\n"
+            "Total images:",
+            total_images,
         )
 
         print(
-            "Feature caching completed"
+            "Previously cached:",
+            already_cached,
         )
+
+        print(
+            "Newly cached:",
+            newly_cached,
+        )
+
+        print(
+            "Skipped:",
+            skipped,
+        )
+
+        print(
+            "Total cached:",
+            processed,
+        )
+
+        print("=" * 50)
 
 
     # =====================================================
@@ -299,12 +477,12 @@ class FeatureCache:
 
     def load_feature(
         self,
-        image_path
+        image_path,
     ):
 
         if isinstance(
             image_path,
-            bytes
+            bytes,
         ):
 
             image_path = image_path.decode(
@@ -322,24 +500,21 @@ class FeatureCache:
         ):
 
             raise FileNotFoundError(
-
                 "Cached feature not found: "
-                + cache_path
-
+                +
+                cache_path
             )
 
 
         feature = np.load(
-            cache_path
+            cache_path,
+            allow_pickle=False,
         )
 
 
-        feature = feature.astype(
+        return feature.astype(
             np.float32
         )
-
-
-        return feature
 
 
 # =========================================================
@@ -348,17 +523,10 @@ class FeatureCache:
 
 if __name__ == "__main__":
 
-    print(
-        "\n=========================================="
-    )
-
-    print(
-        "Testing VisionGPT FeatureCache"
-    )
-
-    print(
-        "=========================================="
-    )
+    print()
+    print("=" * 50)
+    print("Testing VisionGPT FeatureCache")
+    print("=" * 50)
 
 
     sample_images = [
@@ -373,17 +541,14 @@ if __name__ == "__main__":
             "Dataset/COCO/"
             "train2017/train2017/"
             "000000522418.jpg"
-        )
+        ),
 
     ]
 
 
     feature_cache = FeatureCache(
-
         cache_dir="feature_cache_test",
-
-        batch_size=2
-
+        batch_size=2,
     )
 
 
@@ -399,15 +564,13 @@ if __name__ == "__main__":
 
     print(
         "Loaded feature shape:",
-        feature.shape
+        feature.shape,
     )
-
 
     print(
         "Loaded feature dtype:",
-        feature.dtype
+        feature.dtype,
     )
-
 
     print(
         "FeatureCache test successful"

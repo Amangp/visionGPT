@@ -106,7 +106,6 @@ class COCOTrainingLoader:
 
         pairs = []
 
-        missing_images = 0
 
 
         for annotation in annotations:
@@ -142,21 +141,13 @@ class COCOTrainingLoader:
 
             image_path = os.path.join(
                 self.image_folder,
-                image_filename,
+                image_filename
             )
-
-
-            if not os.path.isfile(image_path):
-
-                missing_images += 1
-
-                continue
-
 
             pairs.append(
                 (
                     image_path,
-                    caption,
+                    caption
                 )
             )
 
@@ -171,11 +162,6 @@ class COCOTrainingLoader:
         print(
             f"Valid caption-image pairs: "
             f"{len(pairs)}"
-        )
-
-        print(
-            f"Missing image references: "
-            f"{missing_images}"
         )
 
 
