@@ -20,7 +20,7 @@ class VisionGPTInference:
         )
 
         print(
-            "Loading VisionGPT v2.4"
+            "Loading VisionGPT v3"
         )
 
         print(
@@ -209,7 +209,7 @@ class VisionGPTInference:
 
 
         print(
-            "\nVisionGPT v2.4 ready 🚀"
+            "\nVisionGPT v3 ready 🚀"
         )
 
 
@@ -509,7 +509,7 @@ if __name__ == "__main__":
     MODEL_PATH = (
 
         
-        "checkpoints/visiongpt_v2_6_best_2026_07_13_22_09.weights.h5"
+        "checkpoints/visiongpt_v3_best.weights.h5"
         
 
     )

@@ -1,55 +1,58 @@
 import tensorflow as tf
-import numpy as np
 
 
 class DataPipeline:
 
     def __init__(
         self,
-        feature_cache,
-        batch_size=32,
+        batch_size=8,
         shuffle_buffer=10000
     ):
 
-        self.feature_cache = feature_cache
         self.batch_size = batch_size
         self.shuffle_buffer = shuffle_buffer
 
 
     # =====================================================
-    # LOAD CACHED FEATURE
+    # LOAD IMAGE
     # =====================================================
 
-    def load_cached_feature(
+    def load_image(
         self,
         image_path
     ):
 
-        feature = tf.numpy_function(
-
-            func=self.feature_cache.load_feature,
-
-            inp=[image_path],
-
-            Tout=tf.float32
-
+        image = tf.io.read_file(
+            image_path
         )
 
-        # Cached EfficientNetB0 feature shape
+        image = tf.image.decode_jpeg(
+            image,
+            channels=3
+        )
 
-        feature.set_shape(
+        image = tf.image.resize(
+            image,
             (
-                7,
-                7,
-                1280
+                224,
+                224
             )
         )
 
-        return feature
+        image = tf.cast(
+            image,
+            tf.float32
+        )
+
+        image = tf.keras.applications.efficientnet.preprocess_input(
+            image
+        )
+
+        return image
 
 
     # =====================================================
-    # PREPARE TRAINING EXAMPLE
+    # PREPARE SAMPLE
     # =====================================================
 
     def prepare_example(
@@ -58,7 +61,7 @@ class DataPipeline:
         tokens
     ):
 
-        image_features = self.load_cached_feature(
+        image = self.load_image(
             image_path
         )
 
@@ -68,7 +71,7 @@ class DataPipeline:
 
         return (
             (
-                image_features,
+                image,
                 decoder_input
             ),
             target
@@ -86,9 +89,9 @@ class DataPipeline:
         training=True
     ):
 
-        print(
-            "\nCreating cached feature dataset..."
-        )
+        print("\n==========================================")
+        print("CREATING IMAGE DATASET")
+        print("==========================================")
 
         print(
             "Samples:",
@@ -100,7 +103,6 @@ class DataPipeline:
             self.batch_size
         )
 
-
         dataset = tf.data.Dataset.from_tensor_slices(
             (
                 image_paths,
@@ -108,53 +110,38 @@ class DataPipeline:
             )
         )
 
-
-        # =================================================
-        # SHUFFLE
-        # =================================================
+        # ---------------------------------------------
+        # Shuffle
+        # ---------------------------------------------
 
         if training:
 
-            shuffle_size = min(
-
-                len(image_paths),
-
-                self.shuffle_buffer
-
-            )
-
             dataset = dataset.shuffle(
 
-                buffer_size=shuffle_size,
+                min(
+                    len(image_paths),
+                    self.shuffle_buffer
+                ),
 
                 reshuffle_each_iteration=True
 
             )
 
-            print(
-                "Shuffle buffer:",
-                shuffle_size
-            )
-
-
-        # =================================================
-        # LOAD CACHED FEATURES IN PARALLEL
-        # =================================================
+        # ---------------------------------------------
+        # Load Images
+        # ---------------------------------------------
 
         dataset = dataset.map(
 
             self.prepare_example,
 
-            num_parallel_calls=tf.data.AUTOTUNE,
-
-            deterministic=False
+            num_parallel_calls=tf.data.AUTOTUNE
 
         )
 
-
-        # =================================================
-        # BATCH
-        # =================================================
+        # ---------------------------------------------
+        # Batch
+        # ---------------------------------------------
 
         dataset = dataset.batch(
 
@@ -164,29 +151,98 @@ class DataPipeline:
 
         )
 
-
-        # =================================================
-        # PREFETCH
-        # =================================================
+        # ---------------------------------------------
+        # Prefetch
+        # ---------------------------------------------
 
         dataset = dataset.prefetch(
-
             tf.data.AUTOTUNE
-
-        )
-
-
-        print(
-            "Cached feature loading: parallel"
-        )
-
-        print(
-            "Prefetch: AUTOTUNE"
         )
 
         print(
             "Dataset created successfully"
         )
 
-
         return dataset
+
+
+# =========================================================
+# TEST
+# =========================================================
+
+if __name__ == "__main__":
+
+    print(
+        "\n=========================================="
+    )
+
+    print(
+        "Testing DataPipeline"
+    )
+
+    print(
+        "=========================================="
+    )
+
+    sample_images = [
+
+        "Dataset/COCO/train2017/train2017/000000391895.jpg",
+
+        "Dataset/COCO/train2017/train2017/000000522418.jpg"
+
+    ]
+
+    sample_tokens = tf.constant(
+
+        [
+
+            [3,10,20,30,40,4],
+
+            [3,15,25,35,45,4]
+
+        ],
+
+        dtype=tf.int64
+
+    )
+
+    pipeline = DataPipeline(
+
+        batch_size=2
+
+    )
+
+    dataset = pipeline.create(
+
+        sample_images,
+
+        sample_tokens,
+
+        training=False
+
+    )
+
+    for (images, decoder_input), target in dataset.take(1):
+
+        print()
+
+        print(
+            "Image shape:",
+            images.shape
+        )
+
+        print(
+            "Decoder input shape:",
+            decoder_input.shape
+        )
+
+        print(
+            "Target shape:",
+            target.shape
+        )
+
+    print()
+
+    print(
+        "DataPipeline test successful"
+    )

@@ -1,7 +1,6 @@
 import sys
 import os
 import datetime
-import shutil
 
 sys.path.append(
     os.path.dirname(
@@ -32,7 +31,6 @@ from models.visiongpt import VisionGPT
 from training.trainer import Trainer
 from training.data_pipeline import DataPipeline
 from training.coco_training_loader import COCOTrainingLoader
-from training.feature_cache import FeatureCache
 from training.image_splitter import ImageLevelSplitter
 
 from preprocessing.text_preprocessor import TextPreprocessor
@@ -54,162 +52,11 @@ CAPTION_FILE = (
     "captions_train2017.json"
 )
 BATCH_SIZE = 8
-FEATURE_CACHE_BATCH_SIZE = 16
 EPOCHS = 25
 VALIDATION_SPLIT = 0.10
 RANDOM_SEED = 42
-FEATURE_CACHE_DIR = (
-    "feature_cache"
-)
 
 
-DRIVE_BACKUP_DIR = (
-    "/content/drive/MyDrive/"
-    "VisionGPT/v2.6"
-)
-
-
-CONTEXT_DROPOUT_RATE = 0.10
-
-
-# =========================================================
-# DRIVE BACKUP CALLBACK
-# =========================================================
-
-class DriveCheckpointBackup(
-    tf.keras.callbacks.Callback
-):
-
-    def __init__(
-        self,
-        checkpoint_path,
-        vocab_path,
-        drive_backup_dir
-    ):
-
-        super().__init__()
-
-        self.checkpoint_path = checkpoint_path
-
-        self.vocab_path = vocab_path
-
-        self.drive_backup_dir = drive_backup_dir
-
-        self.best_val_loss = float("inf")
-
-
-    def on_epoch_end(
-        self,
-        epoch,
-        logs=None
-    ):
-
-        logs = logs or {}
-
-        val_loss = logs.get(
-            "val_loss"
-        )
-
-        if val_loss is None:
-
-            return
-
-        if val_loss >= self.best_val_loss:
-
-            return
-
-        self.best_val_loss = val_loss
-
-        if not os.path.exists(
-            self.checkpoint_path
-        ):
-
-            print(
-                "\nCheckpoint not available "
-                "for Drive backup yet"
-            )
-
-            return
-
-        if not os.path.exists(
-            "/content/drive/MyDrive"
-        ):
-
-            print(
-                "\nGoogle Drive is not mounted. "
-                "Skipping Drive backup."
-            )
-
-            return
-
-        os.makedirs(
-
-            self.drive_backup_dir,
-
-            exist_ok=True
-
-        )
-
-        checkpoint_destination = os.path.join(
-
-            self.drive_backup_dir,
-
-            os.path.basename(
-                self.checkpoint_path
-            )
-
-        )
-
-        vocab_destination = os.path.join(
-
-            self.drive_backup_dir,
-
-            "vocab.json"
-
-        )
-
-        shutil.copy2(
-
-            self.checkpoint_path,
-
-            checkpoint_destination
-
-        )
-
-        shutil.copy2(
-
-            self.vocab_path,
-
-            vocab_destination
-
-        )
-
-        print(
-            "\n=========================================="
-        )
-
-        print(
-            "BEST V2.6 MODEL BACKED UP TO DRIVE"
-        )
-
-        print(
-            "=========================================="
-        )
-
-        print(
-            "Validation loss:",
-            val_loss
-        )
-
-        print(
-            "Checkpoint:",
-            checkpoint_destination
-        )
-
-        print(
-            "Vocabulary:",
-            vocab_destination
-        )
 
 
 # =========================================================
@@ -223,7 +70,7 @@ def main():
     )
 
     print(
-        "Starting VisionGPT v2.6 Training"
+        "Starting VisionGPT v3 Training"
     )
 
     print(
@@ -553,7 +400,7 @@ def main():
     # =====================================================
 
     print(
-        "\n[7/11] Tokenizing captions..."
+        "\n[7/10] Tokenizing captions..."
     )
 
     train_tokens = text_processor.process(
@@ -575,41 +422,13 @@ def main():
     )
 
 
-    # =====================================================
-    # 8. CACHE EFFICIENTNET FEATURES
-    # =====================================================
-
-    print(
-        "\n[8/11] Preparing EfficientNet feature cache..."
-    )
-
-
-    all_image_paths = list(
-
-        dict.fromkeys(
-
-            train_image_paths
-
-            +
-
-            val_image_paths
-
-        )
-
-    )
-
-    print(
-        "Unique images selected:",
-        len(all_image_paths)
-    )
-
 
     # =====================================================
-    # 9. CREATE DATASETS
+    # 8. CREATE RAW-IMAGE DATASETS
     # =====================================================
 
     print(
-        "\n[9/11] Creating cached datasets..."
+        "\n[8/10] Creating raw-image datasets..."
     )
 
     pipeline = DataPipeline(
@@ -640,15 +459,15 @@ def main():
 
     for inputs, targets in train_dataset.take(1):
 
-        visual_features, decoder_inputs = inputs
+        images, decoder_inputs = inputs
 
         print(
-            "\nCached batch verification"
+            "\nRaw-image batch verification"
         )
 
         print(
-            "Visual feature shape:",
-            visual_features.shape
+            "Image shape:",
+            images.shape
         )
 
         print(
@@ -663,13 +482,13 @@ def main():
 
 
     # =====================================================
-    # 10. CREATE VISIONGPT V2.6
+    # 9. CREATE VISIONGPT V3
     # =====================================================
 
     print(
-        "\n[10/11] Creating VisionGPT v2.6..."
+        "\n[9/10] Creating VisionGPT v3..."
     )
-
+    CONTEXT_DROPOUT_RATE = 0.10
     model = VisionGPT(
 
         vocab_size=vocab_size,
@@ -684,13 +503,13 @@ def main():
 
     )
 
-    dummy_features = tf.zeros(
+    dummy_image = tf.zeros(
 
         (
             1,
-            7,
-            7,
-            1280
+            224,
+            224,
+            3
         ),
 
         dtype=tf.float32
@@ -711,13 +530,11 @@ def main():
     output = model(
 
         (
-            dummy_features,
+            dummy_image,
             dummy_text
         ),
 
-        training=False,
-
-        use_cached_features=True
+        training=False
 
     )
 
@@ -727,17 +544,17 @@ def main():
     )
 
     print(
-        "VisionGPT v2.6 architecture "
+        "VisionGPT v3 architecture "
         "built successfully"
     )
 
 
     # =====================================================
-    # 11. COMPILE
+    # 10. COMPILE
     # =====================================================
 
     print(
-        "\n[11/11] Compiling VisionGPT v2.6..."
+        "\n[10/10] Compiling VisionGPT v3..."
     )
 
     trainer = Trainer(
@@ -773,7 +590,7 @@ def main():
 
         "checkpoints/"
 
-        f"visiongpt_v2_6_best_"
+        f"visiongpt_v3_best_"
         f"{version}.weights.h5"
 
     )
@@ -826,21 +643,10 @@ def main():
         )
     )
 
-    drive_backup = DriveCheckpointBackup(
-
-        checkpoint_path=checkpoint_path,
-
-        vocab_path="vocab.json",
-
-        drive_backup_dir=DRIVE_BACKUP_DIR
-
-    )
 
     callbacks = [
 
         checkpoint_callback,
-
-        drive_backup,
 
         early_stopping,
 
@@ -858,7 +664,7 @@ def main():
     )
 
     print(
-        "VISIONGPT v2.6 TRAINING STARTED"
+        "VISIONGPT v3 TRAINING STARTED"
     )
 
     print(
@@ -910,10 +716,6 @@ def main():
         checkpoint_path
     )
 
-    print(
-        "Drive backup directory:",
-        DRIVE_BACKUP_DIR
-    )
 
     history = model.fit(
 
@@ -928,72 +730,6 @@ def main():
     )
 
 
-    # =====================================================
-    # FINAL DRIVE BACKUP
-    # =====================================================
-
-    if os.path.exists(
-        checkpoint_path
-    ):
-
-        if os.path.exists(
-            "/content/drive/MyDrive"
-        ):
-
-            os.makedirs(
-
-                DRIVE_BACKUP_DIR,
-
-                exist_ok=True
-
-            )
-
-            final_checkpoint_destination = os.path.join(
-
-                DRIVE_BACKUP_DIR,
-
-                os.path.basename(
-                    checkpoint_path
-                )
-
-            )
-
-            shutil.copy2(
-
-                checkpoint_path,
-
-                final_checkpoint_destination
-
-            )
-
-            shutil.copy2(
-
-                "vocab.json",
-
-                os.path.join(
-                    DRIVE_BACKUP_DIR,
-                    "vocab.json"
-                )
-
-            )
-
-            print(
-                "\nFinal Drive backup verified"
-            )
-
-            print(
-                "Checkpoint:",
-                final_checkpoint_destination
-            )
-
-            print(
-                "Vocabulary:",
-                os.path.join(
-                    DRIVE_BACKUP_DIR,
-                    "vocab.json"
-                )
-            )
-
 
     # =====================================================
     # COMPLETE
@@ -1004,7 +740,7 @@ def main():
     )
 
     print(
-        "VISIONGPT v2.6 TRAINING COMPLETED"
+        "VISIONGPT v3 TRAINING COMPLETED"
     )
 
     print(
@@ -1020,7 +756,7 @@ def main():
     )
 
     print(
-        "\nVisionGPT v2.6 trained successfully 🚀"
+        "\nVisionGPT v3 trained successfully 🚀"
     )
 
 

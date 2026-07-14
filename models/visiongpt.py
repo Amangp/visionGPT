@@ -80,33 +80,17 @@ class VisionGPT(tf.keras.Model):
     def call(
         self,
         inputs,
-        training=False,
-        use_cached_features=False
+        training=False
     ):
 
-        visual_input, text = inputs
+        images, text = inputs
 
-        # =================================================
-        # CACHED VISUAL FEATURES
-        # =================================================
+        # The encoder stays frozen while providing a single raw-image interface.
+        image_features = self.vision_encoder.encode(
 
-        if use_cached_features:
+            images
 
-            image_features = visual_input
-
-        # =================================================
-        # RAW IMAGE INFERENCE
-        # =================================================
-
-        else:
-
-            image_features = self.vision_encoder.model(
-
-                visual_input,
-
-                training=False
-
-            )
+        )
 
         # =================================================
         # VISUAL TRANSFORMER
@@ -162,20 +146,18 @@ class VisionGPT(tf.keras.Model):
 
         inputs, targets = data
 
-        visual_features, text = inputs
+        images, text = inputs
 
         with tf.GradientTape() as tape:
 
             predictions = self(
 
                 (
-                    visual_features,
+                    images,
                     text
                 ),
 
-                training=True,
-
-                use_cached_features=True
+                training=True
 
             )
 
@@ -260,18 +242,16 @@ class VisionGPT(tf.keras.Model):
 
         inputs, targets = data
 
-        visual_features, text = inputs
+        images, text = inputs
 
         predictions = self(
 
             (
-                visual_features,
+                images,
                 text
             ),
 
-            training=False,
-
-            use_cached_features=True
+            training=False
 
         )
 
@@ -321,7 +301,7 @@ if __name__ == "__main__":
     )
 
     print(
-        "Testing VisionGPT v2.6"
+        "Testing VisionGPT v3"
     )
 
     print(
@@ -392,41 +372,6 @@ if __name__ == "__main__":
 
     )
 
-    # =====================================================
-    # CACHED FEATURE TEST
-    # =====================================================
-
-    cached_features = tf.random.normal(
-
-        (
-            1,
-            7,
-            7,
-            1280
-        )
-
-    )
-
-    cached_output = model(
-
-        (
-            cached_features,
-            text
-        ),
-
-        training=False,
-
-        use_cached_features=True
-
-    )
-
-    print(
-
-        "Cached feature output shape:",
-
-        cached_output.shape
-
-    )
 
     # =====================================================
     # TRAINING MODE TEST
@@ -435,13 +380,11 @@ if __name__ == "__main__":
     training_output = model(
 
         (
-            cached_features,
+            image,
             text
         ),
 
-        training=True,
-
-        use_cached_features=True
+        training=True
 
     )
 
@@ -454,5 +397,5 @@ if __name__ == "__main__":
     )
 
     print(
-        "\nVisionGPT v2.6 test successful"
+        "\nVisionGPT v3 test successful"
     )
