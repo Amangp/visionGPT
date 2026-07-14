@@ -10,13 +10,10 @@ class COCOTrainingLoader:
             self,
             image_folder,
             caption_file,
-            limit=1000
     ):
 
         self.image_folder = Path(image_folder)
         self.caption_file = Path(caption_file)
-
-        self.limit = limit
 
 
 
@@ -88,7 +85,10 @@ class COCOTrainingLoader:
             pairs
         )
 
-        selected_pairs = pairs[:self.limit]
+        if self.limit is None:
+            selected_pairs = pairs
+        else:
+            selected_pairs = pairs[:self.limit]
 
         unique_images = set(
             image_path
