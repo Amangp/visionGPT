@@ -11,6 +11,7 @@ class CheckpointLoader:
     ):
 
         self.sequence_length = sequence_length
+        self.model = None
 
 
     # =====================================================
@@ -143,4 +144,9 @@ class CheckpointLoader:
         )
 
 
+        self.model = model
+
         return model
+
+
+visiongpt_loader = CheckpointLoader()

@@ -88,28 +88,45 @@ class VisionGPTInference:
             "startseq"
         )
 
-
         self.end_token = self.vocab.index(
             "endseq"
         )
 
-
-        print(
-            "Start token:",
-            self.start_token
-        )
-
-
-        print(
-            "End token:",
-            self.end_token
-        )
         self.answer_token = self.vocab.index(
             "answerseq"
         )
 
         self.task_caption_token = self.vocab.index(
             "taskcaption"
+        )
+
+        self.task_ocr_token = self.vocab.index(
+            "taskocr"
+        )
+
+        print(
+            "Start token:",
+            self.start_token
+        )
+
+        print(
+            "End token:",
+            self.end_token
+        )
+
+        print(
+            "Answer token:",
+            self.answer_token
+        )
+
+        print(
+            "Task caption token:",
+            self.task_caption_token
+        )
+
+        print(
+            "Task OCR token:",
+            self.task_ocr_token
         )
 
         # =================================================
@@ -120,15 +137,14 @@ class VisionGPTInference:
             "\n[3/4] Creating VisionGPT..."
         )
 
-
         self.model = VisionGPT(
-
             vocab_size=self.vocab_size,
             mask_token_id=self.vocab.index("[UNK]"),
-
             start_token_id=self.start_token,
-
-            end_token_id=self.end_token
+            end_token_id=self.end_token,
+            answer_token_id=self.answer_token,
+            task_caption_token_id=self.task_caption_token,
+            task_ocr_token_id=self.task_ocr_token
         )
 
 
@@ -342,9 +358,15 @@ class VisionGPTInference:
             logits
         )
 
+        try:
+            answer_idx = list(generated_tokens).index(self.answer_token)
+            actual_generated = list(generated_tokens)[answer_idx + 1:]
+        except ValueError:
+            actual_generated = list(generated_tokens)
+
         repeated_tokens = set(
             int(token)
-            for token in generated_tokens
+            for token in actual_generated
             if int(token) > 0
         )
 
@@ -568,7 +590,7 @@ class VisionGPTInference:
                         self.start_token,
                         self.answer_token,
                         self.task_caption_token,    
-                        self.vocab.index("taskocr")
+                        self.task_ocr_token
                     ],
                     dtype=tf.int32
                 )
@@ -721,13 +743,11 @@ class VisionGPTInference:
 
                 generated, score, _ = beam
 
-                generated_length = max(
-
-                    len(generated) - 1,
-
-                    1
-
-                )
+                try:
+                    answer_idx = list(generated).index(self.answer_token)
+                    generated_length = max(len(generated) - (answer_idx + 1), 1)
+                except ValueError:
+                    generated_length = max(len(generated) - 1, 1)
 
                 return (
 
@@ -796,13 +816,11 @@ class VisionGPTInference:
 
             generated, score, _ = beam
 
-            generated_length = max(
-
-                len(generated) - 1,
-
-                1
-
-            )
+            try:
+                answer_idx = list(generated).index(self.answer_token)
+                generated_length = max(len(generated) - (answer_idx + 1), 1)
+            except ValueError:
+                generated_length = max(len(generated) - 1, 1)
 
             return (
 
@@ -828,8 +846,14 @@ class VisionGPTInference:
         )
 
 
+        try:
+            answer_idx = best_generated.index(self.answer_token)
+            caption_tokens = best_generated[answer_idx + 1:]
+        except ValueError:
+            caption_tokens = best_generated
+
         caption = self.decode_tokens(
-            best_generated
+            caption_tokens
         )
 
 
@@ -985,6 +1009,17 @@ if __name__ == "__main__":
 
     def run_visual_conditioning_test(bot):
 
+        image_paths = {
+            "tree": "test_images/tree.jpg",
+            "dinosaur": "test_images/dinosaur.jpg",
+            "person": "test_images/person.jpg",
+            "car": "test_images/car.jpg",
+            "dog": "test_images/dog.jpg"
+        }
+
+        logits_by_image = {}
+        vocabulary = bot.vocab
+
         prompt = "describe the image"
 
         prompt_tokens = (
@@ -1004,17 +1039,13 @@ if __name__ == "__main__":
 
         ]
 
-        task_caption_token = word_to_index[
-            "taskcaption"
-        ]
+        task_caption_token = bot.task_caption_token
 
-        answer_token = word_to_index[
-            "answerseq"
-        ]
+        answer_token = bot.answer_token
 
         decoder_tokens = [
 
-            start_token,
+            bot.start_token,
 
             task_caption_token,
 

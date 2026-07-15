@@ -335,7 +335,8 @@ class AnswerDecoder(
 
         self.output_layer = (
             tf.keras.layers.Dense(
-                vocab_size
+                vocab_size,
+                dtype="float32"
             )
         )
 
@@ -461,15 +462,10 @@ class AnswerDecoder(
         for decoder_block in self.decoder_blocks:
 
             x = decoder_block(
-
-                x=x,
-
-                image_features=image_features,
-
-                causal_mask=causal_mask,
-
+                x,
+                image_features,
+                causal_mask,
                 training=training
-
             )
 
 

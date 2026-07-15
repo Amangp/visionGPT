@@ -43,7 +43,13 @@ model = VisionGPT(
 
     start_token_id=START_TOKEN_ID,
 
-    end_token_id=END_TOKEN_ID
+    end_token_id=END_TOKEN_ID,
+
+    answer_token_id=6,
+
+    task_caption_token_id=7,
+
+    task_ocr_token_id=14
 
 )
 

@@ -306,11 +306,21 @@ def main():
         "answer_token_id"
     ]
 
+    task_caption_token_id = special_token_ids[
+        "task_caption_token_id"
+    ]
+
+    task_ocr_token_id = special_token_ids[
+        "task_ocr_token_id"
+    ]
+
     print("Vocabulary size:", vocab_size)
     print("Mask token ID:", mask_token_id)
     print("Start token ID:", start_token_id)
     print("End token ID:", end_token_id)
     print("Answer token ID:", answer_token_id)
+    print("Task caption token ID:", task_caption_token_id)
+    print("Task OCR token ID:", task_ocr_token_id)
 
     # =====================================================
     # 7. TOKENIZE
@@ -384,7 +394,10 @@ def main():
         context_dropout_rate=CONTEXT_DROPOUT_RATE,
         mask_token_id=mask_token_id,
         start_token_id=start_token_id,
-        end_token_id=end_token_id
+        end_token_id=end_token_id,
+        answer_token_id=answer_token_id,
+        task_caption_token_id=task_caption_token_id,
+        task_ocr_token_id=task_ocr_token_id
     )
 
     dummy_image = tf.zeros(

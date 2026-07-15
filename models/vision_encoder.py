@@ -82,7 +82,7 @@ class VisionEncoder(tf.keras.layers.Layer):
 
         return self.model(
             image,
-            training=training
+            training=False
         )
 
 

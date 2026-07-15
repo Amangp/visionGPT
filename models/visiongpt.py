@@ -15,7 +15,10 @@ class VisionGPT(tf.keras.Model):
         context_dropout_rate=0.10,
         mask_token_id=1,
         start_token_id=3,
-        end_token_id=4
+        end_token_id=4,
+        answer_token_id=5,
+        task_caption_token_id=7,
+        task_ocr_token_id=14
     ):
 
         super().__init__()
@@ -38,7 +41,10 @@ class VisionGPT(tf.keras.Model):
                 0,
                 mask_token_id,
                 start_token_id,
-                end_token_id
+                end_token_id,
+                answer_token_id,
+                task_caption_token_id,
+                task_ocr_token_id
             ]
         )
 
@@ -217,7 +223,10 @@ if __name__ == "__main__":
         context_dropout_rate=0.10,
         mask_token_id=1,
         start_token_id=3,
-        end_token_id=4
+        end_token_id=4,
+        answer_token_id=5,
+        task_caption_token_id=7,
+        task_ocr_token_id=14
     )
 
     image = tf.random.normal(
