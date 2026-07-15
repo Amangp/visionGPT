@@ -23,59 +23,31 @@ class VisionGPT(tf.keras.Model):
         self.vocab_size = vocab_size
         self.embed_dim = embed_dim
 
-        # =================================================
-        # VISION ENCODER
-        # =================================================
-
         self.vision_encoder = VisionEncoder(
             embed_dim=embed_dim
         )
-
-        # =================================================
-        # VISUAL FUSION TRANSFORMER
-        # =================================================
 
         self.fusion_layer = FusionLayer(
             embed_dim=embed_dim
         )
 
-        # =================================================
-        # CAPTION CONTEXT DROPOUT
-        # =================================================
-
         self.context_dropout = ContextDropout(
-
             dropout_rate=context_dropout_rate,
-
             mask_token_id=mask_token_id,
-
             protected_token_ids=[
                 0,
                 mask_token_id,
                 start_token_id,
                 end_token_id
             ]
-
         )
-
-        # =================================================
-        # ANSWER DECODER
-        # =================================================
 
         self.answer_decoder = AnswerDecoder(
-
             vocab_size=vocab_size,
-
             embed_dim=embed_dim,
-
             num_decoder_layers=3
-
         )
 
-
-    # =====================================================
-    # CALL
-    # =====================================================
 
     def call(
         self,
@@ -85,98 +57,55 @@ class VisionGPT(tf.keras.Model):
 
         images, text = inputs
 
-        # The encoder stays frozen while providing a single raw-image interface.
         image_features = self.vision_encoder.encode(
-
-            images
-
+            images,
+            training=training
         )
-
-        # =================================================
-        # VISUAL TRANSFORMER
-        # =================================================
 
         image_features = self.fusion_layer(
-
             image_features,
-
             training=training
-
         )
-
-        # =================================================
-        # CONTEXT DROPOUT
-        #
-        # ACTIVE ONLY DURING TRAINING
-        # =================================================
 
         text = self.context_dropout(
-
             text,
-
             training=training
-
         )
 
-        # =================================================
-        # DECODER
-        # =================================================
-
-        output = self.answer_decoder(
-
+        return self.answer_decoder(
             text,
-
             image_features,
-
             training=training
-
         )
 
-        return output
-
-
-    # =====================================================
-    # TRAIN STEP
-    # =====================================================
 
     def train_step(
-        self,
-        data
+    self,
+    data
     ):
 
-        inputs, targets = data
-
-        images, text = inputs
+        inputs, targets, target_mask = data
 
         with tf.GradientTape() as tape:
 
             predictions = self(
-
-                (
-                    images,
-                    text
-                ),
-
+                inputs,
                 training=True
-
             )
 
             loss = self.compute_loss(
-
                 y=targets,
-
-                y_pred=predictions
-
+                y_pred=predictions,
+                sample_weight=target_mask
             )
 
-        trainable_variables = self.trainable_variables
+        trainable_variables = (
+            self.trainable_variables
+        )
 
         gradients = tape.gradient(
-
             loss,
-
             trainable_variables
-
         )
 
         gradients_and_variables = [
@@ -187,11 +116,8 @@ class VisionGPT(tf.keras.Model):
             )
 
             for gradient, variable in zip(
-
                 gradients,
-
                 trainable_variables
-
             )
 
             if gradient is not None
@@ -199,9 +125,7 @@ class VisionGPT(tf.keras.Model):
         ]
 
         self.optimizer.apply_gradients(
-
             gradients_and_variables
-
         )
 
         for metric in self.metrics:
@@ -215,52 +139,37 @@ class VisionGPT(tf.keras.Model):
             else:
 
                 metric.update_state(
-
                     targets,
-
-                    predictions
-
+                    predictions,
+                    sample_weight=target_mask
                 )
 
         return {
 
-            metric.name: metric.result()
+            metric.name:
+                metric.result()
 
             for metric in self.metrics
 
-        }
+    }
 
-
-    # =====================================================
-    # VALIDATION STEP
-    # =====================================================
 
     def test_step(
         self,
         data
     ):
 
-        inputs, targets = data
-
-        images, text = inputs
+        inputs, targets, target_mask = data
 
         predictions = self(
-
-            (
-                images,
-                text
-            ),
-
+            inputs,
             training=False
-
         )
 
         loss = self.compute_loss(
-
             y=targets,
-
-            y_pred=predictions
-
+            y_pred=predictions,
+            sample_weight=target_mask
         )
 
         for metric in self.metrics:
@@ -274,25 +183,20 @@ class VisionGPT(tf.keras.Model):
             else:
 
                 metric.update_state(
-
                     targets,
-
-                    predictions
-
+                    predictions,
+                    sample_weight=target_mask
                 )
 
         return {
 
-            metric.name: metric.result()
+            metric.name:
+                metric.result()
 
             for metric in self.metrics
 
         }
 
-
-# =========================================================
-# TEST
-# =========================================================
 
 if __name__ == "__main__":
 
@@ -301,7 +205,7 @@ if __name__ == "__main__":
     )
 
     print(
-        "Testing VisionGPT v3"
+        "Testing VisionGPT v3.2"
     )
 
     print(
@@ -309,36 +213,23 @@ if __name__ == "__main__":
     )
 
     model = VisionGPT(
-
         vocab_size=10000,
-
         context_dropout_rate=0.10,
-
         mask_token_id=1,
-
         start_token_id=3,
-
         end_token_id=4
-
     )
 
-    # =====================================================
-    # RAW IMAGE TEST
-    # =====================================================
-
     image = tf.random.normal(
-
         (
             1,
             224,
             224,
             3
         )
-
     )
 
     text = tf.constant(
-
         [
             [
                 3,
@@ -348,54 +239,22 @@ if __name__ == "__main__":
                 4
             ]
         ],
-
         dtype=tf.int64
-
     )
 
-    normal_output = model(
-
+    output = model(
         (
             image,
             text
         ),
-
         training=False
-
     )
 
     print(
-
-        "Normal image output shape:",
-
-        normal_output.shape
-
-    )
-
-
-    # =====================================================
-    # TRAINING MODE TEST
-    # =====================================================
-
-    training_output = model(
-
-        (
-            image,
-            text
-        ),
-
-        training=True
-
+        "Output shape:",
+        output.shape
     )
 
     print(
-
-        "Training output shape:",
-
-        training_output.shape
-
-    )
-
-    print(
-        "\nVisionGPT v3 test successful"
+        "\nVisionGPT v3.2 test successful"
     )

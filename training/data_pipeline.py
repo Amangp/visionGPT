@@ -6,11 +6,13 @@ class DataPipeline:
     def __init__(
         self,
         batch_size=8,
-        shuffle_buffer=10000
+        shuffle_buffer=10000,
+        answer_token_id=5
     ):
 
         self.batch_size = batch_size
         self.shuffle_buffer = shuffle_buffer
+        self.answer_token_id = answer_token_id
 
 
     # =====================================================
@@ -26,9 +28,18 @@ class DataPipeline:
             image_path
         )
 
-        image = tf.image.decode_jpeg(
+        image = tf.image.decode_image(
             image,
-            channels=3
+            channels=3,
+            expand_animations=False
+        )
+
+        image.set_shape(
+            (
+                None,
+                None,
+                3
+            )
         )
 
         image = tf.image.resize(
@@ -44,11 +55,68 @@ class DataPipeline:
             tf.float32
         )
 
-        image = tf.keras.applications.efficientnet.preprocess_input(
-            image
+        image = (
+            tf.keras.applications
+            .efficientnet
+            .preprocess_input(
+                image
+            )
         )
 
         return image
+
+
+    # =====================================================
+    # CREATE ANSWER MASK
+    # =====================================================
+
+    def create_answer_mask(
+        self,
+        tokens
+    ):
+
+        answer_positions = tf.equal(
+            tokens,
+            tf.cast(
+                self.answer_token_id,
+                tokens.dtype
+            )
+        )
+
+        answer_positions = tf.cast(
+            answer_positions,
+            tf.int32
+        )
+
+        answer_seen = tf.cumsum(
+            answer_positions
+        )
+
+        answer_mask = tf.greater(
+            answer_seen,
+            0
+        )
+
+        answer_mask = tf.logical_and(
+            answer_mask,
+            tf.not_equal(
+                tokens,
+                self.answer_token_id
+            )
+        )
+
+        answer_mask = tf.logical_and(
+            answer_mask,
+            tf.not_equal(
+                tokens,
+                0
+            )
+        )
+
+        return tf.cast(
+            answer_mask,
+            tf.float32
+        )
 
 
     # =====================================================
@@ -69,12 +137,17 @@ class DataPipeline:
 
         target = tokens[1:]
 
+        target_mask = self.create_answer_mask(
+            target
+        )
+
         return (
             (
                 image,
                 decoder_input
             ),
-            target
+            target,
+            target_mask
         )
 
 
@@ -89,9 +162,17 @@ class DataPipeline:
         training=True
     ):
 
-        print("\n==========================================")
-        print("CREATING IMAGE DATASET")
-        print("==========================================")
+        print(
+            "\n=========================================="
+        )
+
+        print(
+            "CREATING VISIONGPT v4 DATASET"
+        )
+
+        print(
+            "=========================================="
+        )
 
         print(
             "Samples:",
@@ -103,33 +184,40 @@ class DataPipeline:
             self.batch_size
         )
 
-        dataset = tf.data.Dataset.from_tensor_slices(
-            (
-                image_paths,
-                text_tokens
+        print(
+            "Answer token ID:",
+            self.answer_token_id
+        )
+
+
+        dataset = (
+            tf.data.Dataset
+            .from_tensor_slices(
+                (
+                    image_paths,
+                    text_tokens
+                )
             )
         )
 
-        # ---------------------------------------------
-        # Shuffle
-        # ---------------------------------------------
 
         if training:
 
-            dataset = dataset.shuffle(
-
-                min(
-                    len(image_paths),
-                    self.shuffle_buffer
-                ),
-
-                reshuffle_each_iteration=True
-
+            shuffle_size = min(
+                len(image_paths),
+                self.shuffle_buffer
             )
 
-        # ---------------------------------------------
-        # Load Images
-        # ---------------------------------------------
+            dataset = dataset.shuffle(
+                buffer_size=shuffle_size,
+                reshuffle_each_iteration=True
+            )
+
+            print(
+                "Shuffle buffer:",
+                shuffle_size
+            )
+
 
         dataset = dataset.map(
 
@@ -138,6 +226,22 @@ class DataPipeline:
             num_parallel_calls=tf.data.AUTOTUNE
 
         )
+
+        # ---------------------------------------------
+        # Cache decoded images
+        # ---------------------------------------------
+
+        if training:
+
+            dataset = dataset.cache(
+                "cache/train.cache"
+            )
+
+        else:
+
+            dataset = dataset.cache(
+                "cache/val.cache"
+            )
 
         # ---------------------------------------------
         # Batch
@@ -156,12 +260,16 @@ class DataPipeline:
         # ---------------------------------------------
 
         dataset = dataset.prefetch(
+
             tf.data.AUTOTUNE
+
         )
 
+
         print(
-            "Dataset created successfully"
+            "VisionGPT v4 dataset created"
         )
+
 
         return dataset
 
@@ -172,77 +280,84 @@ class DataPipeline:
 
 if __name__ == "__main__":
 
-    print(
-        "\n=========================================="
+    pipeline = DataPipeline(
+        batch_size=2,
+        answer_token_id=5
     )
 
-    print(
-        "Testing DataPipeline"
-    )
-
-    print(
-        "=========================================="
-    )
-
-    sample_images = [
-
-        "Dataset/COCO/train2017/train2017/000000391895.jpg",
-
-        "Dataset/COCO/train2017/train2017/000000522418.jpg"
-
-    ]
 
     sample_tokens = tf.constant(
 
         [
+            [
+                3,
+                9,
+                18,
+                2,
+                16,
+                5,
+                6,
+                17,
+                10,
+                12,
+                6,
+                20,
+                4,
+                0,
+                0
+            ],
 
-            [3,10,20,30,40,4],
-
-            [3,15,25,35,45,4]
-
+            [
+                3,
+                8,
+                7,
+                15,
+                2,
+                19,
+                13,
+                11,
+                5,
+                14,
+                4,
+                0,
+                0,
+                0,
+                0
+            ]
         ],
 
         dtype=tf.int64
 
     )
 
-    pipeline = DataPipeline(
 
-        batch_size=2
+    for tokens in sample_tokens:
 
-    )
+        target = tokens[1:]
 
-    dataset = pipeline.create(
+        mask = pipeline.create_answer_mask(
+            target
+        )
 
-        sample_images,
-
-        sample_tokens,
-
-        training=False
-
-    )
-
-    for (images, decoder_input), target in dataset.take(1):
-
-        print()
 
         print(
-            "Image shape:",
-            images.shape
+            "\nTarget:"
         )
 
         print(
-            "Decoder input shape:",
-            decoder_input.shape
+            target.numpy()
+        )
+
+
+        print(
+            "Answer mask:"
         )
 
         print(
-            "Target shape:",
-            target.shape
+            mask.numpy()
         )
 
-    print()
 
     print(
-        "DataPipeline test successful"
+        "\nDataPipeline v4 mask test successful"
     )

@@ -1,5 +1,6 @@
 from typing import Optional
 
+
 from fastapi import (
     APIRouter,
     File,
@@ -7,13 +8,16 @@ from fastapi import (
     UploadFile
 )
 
+
 from core.config import settings
 
 from core.errors import VisionGPTError
 
 from schemas.responses import VisionResponse
 
-from services.orchestrator import process_request
+from services.orchestrator import (
+    process_request
+)
 
 
 router = APIRouter(
@@ -32,6 +36,10 @@ async def vision(
     ),
 
     question: Optional[str] = Form(
+        default=None
+    ),
+
+    session_id: Optional[str] = Form(
         default=None
     )
 
@@ -56,7 +64,9 @@ async def vision(
                     "or WEBP image."
                 ),
 
-                code="UNSUPPORTED_IMAGE_TYPE",
+                code=(
+                    "UNSUPPORTED_IMAGE_TYPE"
+                ),
 
                 status_code=415
 
@@ -105,6 +115,8 @@ async def vision(
 
         image_bytes=image_bytes,
 
-        question=question
+        question=question,
 
-    )
+        session_id=session_id
+
+    )   

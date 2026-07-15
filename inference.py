@@ -12,7 +12,7 @@ class VisionGPTInference:
     def __init__(
             self,
             model_path,
-            vocab_path="vocab.json"
+            vocab_path="vocab_v4.json"
     ):
 
         print(
@@ -20,7 +20,7 @@ class VisionGPTInference:
         )
 
         print(
-            "Loading VisionGPT v3"
+            "Loading VisionGPT v4"
         )
 
         print(
@@ -104,7 +104,13 @@ class VisionGPTInference:
             "End token:",
             self.end_token
         )
+        self.answer_token = self.vocab.index(
+            "answerseq"
+        )
 
+        self.task_caption_token = self.vocab.index(
+            "taskcaption"
+        )
 
         # =================================================
         # 3. CREATE MODEL
@@ -117,8 +123,12 @@ class VisionGPTInference:
 
         self.model = VisionGPT(
 
-            vocab_size=self.vocab_size
+            vocab_size=self.vocab_size,
+            mask_token_id=self.vocab.index("[UNK]"),
 
+            start_token_id=self.start_token,
+
+            end_token_id=self.end_token
         )
 
 
@@ -143,7 +153,7 @@ class VisionGPTInference:
 
             (
                 1,
-                29
+                49
             ),
 
             dtype=tf.int64
@@ -209,7 +219,7 @@ class VisionGPTInference:
 
 
         print(
-            "\nVisionGPT v3 ready 🚀"
+            "\nVisionGPT v4 ready 🚀"
         )
 
 
@@ -252,7 +262,10 @@ class VisionGPTInference:
             if word in [
 
                 "startseq",
-                "endseq"
+                "endseq",
+                "answerseq",
+                "taskcaption",
+                "taskocr"
 
             ]:
 
@@ -270,13 +283,124 @@ class VisionGPTInference:
 
 
     # =====================================================
-    # CAPTION GENERATION
+    # BEAM SEARCH HELPERS
+    # =====================================================
+
+    def _creates_repeated_ngram(
+        self,
+        sequence,
+        candidate_token,
+        ngram_size=3
+    ):
+
+        if ngram_size <= 1:
+            return candidate_token in sequence
+
+        candidate_sequence = (
+            list(sequence)
+            +
+            [int(candidate_token)]
+        )
+
+        if len(candidate_sequence) < ngram_size:
+            return False
+
+        new_ngram = tuple(
+            candidate_sequence[-ngram_size:]
+        )
+
+        previous_ngrams = {
+
+            tuple(
+                candidate_sequence[
+                    index:index + ngram_size
+                ]
+            )
+
+            for index in range(
+                len(candidate_sequence)
+                -
+                ngram_size
+            )
+
+        }
+
+        return new_ngram in previous_ngrams
+
+
+    def _apply_repetition_penalty(
+        self,
+        logits,
+        generated_tokens,
+        repetition_penalty=1.2
+    ):
+
+        if repetition_penalty <= 1.0:
+            return logits
+
+        logits = tf.identity(
+            logits
+        )
+
+        repeated_tokens = set(
+            int(token)
+            for token in generated_tokens
+            if int(token) > 0
+        )
+
+        if not repeated_tokens:
+            return logits
+
+        token_indices = tf.constant(
+            sorted(repeated_tokens),
+            dtype=tf.int32
+        )
+
+        token_logits = tf.gather(
+            logits,
+            token_indices
+        )
+
+        penalized_logits = tf.where(
+
+            token_logits < 0,
+
+            token_logits
+            *
+            repetition_penalty,
+
+            token_logits
+            /
+            repetition_penalty
+
+        )
+
+        return tf.tensor_scatter_nd_update(
+
+            logits,
+
+            tf.expand_dims(
+                token_indices,
+                axis=1
+            ),
+
+            penalized_logits
+
+        )
+
+
+    # =====================================================
+    # CAPTION GENERATION - BEAM SEARCH
     # =====================================================
 
     def generate(
-            self,
-            image_path,
-            max_length=29
+        self,
+        image_path,
+        max_length=29,
+        beam_width=5,
+        repetition_penalty=1.2,
+        no_repeat_ngram_size=3,
+        length_penalty=0.7
     ):
 
         if not os.path.exists(
@@ -299,7 +423,6 @@ class VisionGPTInference:
             image_path
         )
 
-
         image = tf.expand_dims(
 
             image,
@@ -310,100 +433,403 @@ class VisionGPTInference:
 
 
         # =================================================
-        # START GENERATION
+        # INITIAL BEAM
+        #
+        # beam:
+        # (
+        #     generated token IDs,
+        #     cumulative log probability,
+        #     finished
+        # )
         # =================================================
 
-        generated = [
+        prompt = (
+            "describe the image"
+        )
 
-            self.start_token
+        prompt_tokens = self.text_processor.process(
+            [prompt]
+        ).numpy()[0]
+
+        prompt_tokens = [
+            int(token)
+            for token in prompt_tokens
+            if token > 0
+        ]
+
+        initial_tokens = [
+
+            self.start_token,
+
+            self.task_caption_token,
+
+            *prompt_tokens,
+
+            self.answer_token
+
+        ]
+
+        beams = [
+
+            (
+                initial_tokens,
+                0.0,
+                False
+            )
 
         ]
 
 
         # =================================================
-        # AUTOREGRESSIVE GENERATION
+        # AUTOREGRESSIVE BEAM SEARCH
         # =================================================
 
         for _ in range(
             max_length - 1
         ):
 
+            candidates = []
 
-            tokens = tf.constant(
+            all_finished = True
 
-                [
-                    generated
-                ],
 
-                dtype=tf.int64
+            for generated, score, finished in beams:
+
+                if finished:
+
+                    candidates.append(
+
+                        (
+                            generated,
+                            score,
+                            True
+                        )
+
+                    )
+
+                    continue
+
+
+                all_finished = False
+
+
+                tokens = tf.constant(
+
+                    [
+                        generated
+                    ],
+
+                    dtype=tf.int64
+
+                )
+
+
+                predictions = self.model(
+
+                    (
+                        image,
+                        tokens
+                    ),
+
+                    training=False
+
+                )
+
+
+                next_token_logits = predictions[
+
+                    0,
+
+                    -1,
+
+                    :
+
+                ]
+
+
+                next_token_logits = (
+                    self._apply_repetition_penalty(
+
+                        next_token_logits,
+
+                        generated,
+
+                        repetition_penalty
+
+                    )
+                )
+
+
+                # Never generate padding or start token.
+
+                blocked_indices = tf.constant(
+                    [
+                        0,
+                        self.start_token,
+                        self.answer_token,
+                        self.task_caption_token,    
+                        self.vocab.index("taskocr")
+                    ],
+                    dtype=tf.int32
+                )
+
+
+                next_token_logits = (
+                    tf.tensor_scatter_nd_update(
+
+                        next_token_logits,
+
+                        tf.expand_dims(
+                            blocked_indices,
+                            axis=1
+                        ),
+
+                        tf.fill(
+                            tf.shape(blocked_indices),
+                            tf.cast(
+                                -1e9,
+                                next_token_logits.dtype
+                            )
+                        )
+
+                    )
+                )
+
+
+                log_probs = tf.nn.log_softmax(
+                    next_token_logits
+                )
+
+
+                search_width = min(
+
+                    self.vocab_size,
+
+                    max(
+                        beam_width * 4,
+                        beam_width
+                    )
+
+                )
+
+
+                top_values, top_indices = tf.math.top_k(
+
+                    log_probs,
+
+                    k=search_width
+
+                )
+
+
+                top_values = top_values.numpy()
+
+                top_indices = top_indices.numpy()
+
+
+                accepted = 0
+
+
+                for token_log_prob, token_id in zip(
+
+                    top_values,
+
+                    top_indices
+
+                ):
+
+                    token_id = int(
+                        token_id
+                    )
+
+
+                    if (
+
+                        token_id != self.end_token
+
+                        and
+
+                        self._creates_repeated_ngram(
+
+                            generated,
+
+                            token_id,
+
+                            no_repeat_ngram_size
+
+                        )
+
+                    ):
+
+                        continue
+
+
+                    new_generated = (
+                        generated
+                        +
+                        [token_id]
+                    )
+
+
+                    new_score = (
+
+                        score
+
+                        +
+
+                        float(
+                            token_log_prob
+                        )
+
+                    )
+
+
+                    new_finished = (
+                        token_id
+                        ==
+                        self.end_token
+                    )
+
+
+                    candidates.append(
+
+                        (
+                            new_generated,
+                            new_score,
+                            new_finished
+                        )
+
+                    )
+
+
+                    accepted += 1
+
+
+                    if accepted >= beam_width:
+                        break
+
+
+            if all_finished:
+                break
+
+
+            if not candidates:
+                break
+
+
+            def normalized_score(beam):
+
+                generated, score, _ = beam
+
+                generated_length = max(
+
+                    len(generated) - 1,
+
+                    1
+
+                )
+
+                return (
+
+                    score
+
+                    /
+
+                    (
+                        generated_length
+                        **
+                        length_penalty
+                    )
+
+                )
+
+
+            candidates.sort(
+
+                key=normalized_score,
+
+                reverse=True
 
             )
 
 
-            predictions = self.model(
-
-                (
-                    image,
-                    tokens
-                ),
-
-                training=False
-
-            )
-
-
-            next_token_probs = predictions[
-
-                0,
-
-                -1,
-
-                :
-
+            beams = candidates[
+                :beam_width
             ]
 
 
-            next_token = tf.argmax(
-
-                next_token_probs,
-
-                axis=-1
-
-            )
-
-
-            next_token = int(
-
-                next_token.numpy()
-
-            )
-
-
-            # =============================================
-            # END TOKEN
-            # =============================================
-
-            if next_token == self.end_token:
+            if all(
+                finished
+                for _, _, finished in beams
+            ):
 
                 break
 
 
-            # =============================================
-            # PADDING TOKEN
-            # =============================================
+        # =================================================
+        # SELECT BEST BEAM
+        # =================================================
 
-            if next_token == 0:
+        finished_beams = [
 
-                break
+            beam
+
+            for beam in beams
+
+            if beam[2]
+
+        ]
 
 
-            generated.append(
-                next_token
+        final_beams = (
+
+            finished_beams
+
+            if finished_beams
+
+            else beams
+
+        )
+
+
+        def final_score(beam):
+
+            generated, score, _ = beam
+
+            generated_length = max(
+
+                len(generated) - 1,
+
+                1
+
             )
+
+            return (
+
+                score
+
+                /
+
+                (
+                    generated_length
+                    **
+                    length_penalty
+                )
+
+            )
+
+
+        best_generated, _, _ = max(
+
+            final_beams,
+
+            key=final_score
+
+        )
 
 
         caption = self.decode_tokens(
-            generated
+            best_generated
         )
 
 
@@ -425,7 +851,7 @@ class VisionGPTInference:
         )
 
         print(
-            "VISIONGPT v2.4 IMAGE TEST"
+            "VISIONGPT v3.1 IMAGE TEST"
         )
 
         print(
@@ -509,14 +935,14 @@ if __name__ == "__main__":
     MODEL_PATH = (
 
         
-        "checkpoints/visiongpt_v3_best.weights.h5"
+        "checkpoints//visiongpt_v4_best_2026_07_15_19_01.weights.h5"
         
 
     )
 
 
     VOCAB_PATH = (
-        "vocab.json"
+        "vocab_v4.json"
     )
 
 
@@ -559,92 +985,61 @@ if __name__ == "__main__":
 
     def run_visual_conditioning_test(bot):
 
-        print(
-            "\n=========================================="
-        )
+        prompt = "describe the image"
 
-        print(
-            "VISIONGPT VISUAL CONDITIONING TEST"
-        )
-
-        print(
-            "=========================================="
-        )
-
-
-        image_paths = {
-
-            "tree": "test_images/tree.jpg",
-
-            "car": "test_images/car.jpg",
-
-            "dinosaur": "test_images/dinosaur.jpg",
-
-            "dog": "test_images/dog.jpg",
-
-            "person": "test_images/person.jpg"
-
-        }
-
-
-        # =====================================================
-        # GET START TOKEN
-        # =====================================================
-
-        vocabulary = (
-            bot.text_processor
-            .vectorizer
-            .get_vocabulary()
-        )
-
-
-        word_to_index = {
-
-            word: index
-
-            for index, word in enumerate(
-                vocabulary
+        prompt_tokens = (
+            bot.text_processor.process(
+                [prompt]
             )
+            .numpy()[0]
+        )
 
-        }
+        prompt_tokens = [
 
+            int(token)
 
-        if "startseq" not in word_to_index:
+            for token in prompt_tokens
 
-            raise ValueError(
-                "startseq token not found in vocabulary"
-            )
+            if token > 0
 
-
-        start_token = word_to_index[
-            "startseq"
         ]
 
+        task_caption_token = word_to_index[
+            "taskcaption"
+        ]
+
+        answer_token = word_to_index[
+            "answerseq"
+        ]
+
+        decoder_tokens = [
+
+            start_token,
+
+            task_caption_token,
+
+            *prompt_tokens,
+
+            answer_token
+
+        ]
+        print("\nDiagnostic prompt:")
 
         print(
-            "Start token:",
-            start_token
+            bot.text_processor.decode(
+                decoder_tokens
+            )
         )
-
-
-        # =====================================================
-        # SAME TEXT INPUT FOR EVERY IMAGE
-        # =====================================================
 
         text_input = tf.constant(
 
             [
-                [
-                    start_token
-                ]
+                decoder_tokens
             ],
 
             dtype=tf.int64
 
         )
-
-
-        logits_by_image = {}
 
 
         # =====================================================

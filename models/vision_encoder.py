@@ -1,55 +1,112 @@
 import tensorflow as tf
 
 
-class VisionEncoder:
+class VisionEncoder(tf.keras.layers.Layer):
 
     def __init__(
-            self,
-            embed_dim=256
+        self,
+        embed_dim=256,
+        **kwargs
     ):
 
-        # --------------------------------------------------
-        # EfficientNetB0 Backbone
-        # --------------------------------------------------
+        super().__init__(**kwargs)
+
+        self.embed_dim = embed_dim
 
         self.model = tf.keras.applications.EfficientNetB0(
-
             include_top=False,
-
             weights="imagenet",
-
             pooling=None
-
         )
 
-        # --------------------------------------------------
-        # Freeze EfficientNet
-        # --------------------------------------------------
+        self.freeze_backbone()
+
+
+    def freeze_backbone(self):
 
         self.model.trainable = False
 
+        for layer in self.model.layers:
+            layer.trainable = False
 
-    def encode(
-            self,
-            image
+
+    def enable_fine_tuning(
+        self,
+        unfreeze_last_n=30
     ):
 
-        # --------------------------------------------------
-        # Extract Spatial Image Features
-        #
-        # Input:
-        # (batch, 224, 224, 3)
-        #
-        # Output:
-        # (batch, 7, 7, 1280)
-        # --------------------------------------------------
+        self.model.trainable = True
 
-        features = self.model(
-            image,
-            training=False
+        total_layers = len(self.model.layers)
+        unfreeze_from = max(
+            total_layers - unfreeze_last_n,
+            0
         )
 
-        return features
+        for index, layer in enumerate(
+            self.model.layers
+        ):
+
+            layer.trainable = (
+                index >= unfreeze_from
+            )
+
+            if isinstance(
+                layer,
+                tf.keras.layers.BatchNormalization
+            ):
+
+                layer.trainable = False
+
+        trainable_layers = sum(
+            layer.trainable
+            for layer in self.model.layers
+        )
+
+        print(
+            "EfficientNet total layers:",
+            total_layers
+        )
+
+        print(
+            "EfficientNet trainable layers:",
+            trainable_layers
+        )
+
+
+    def call(
+        self,
+        image,
+        training=False
+    ):
+
+        return self.model(
+            image,
+            training=training
+        )
+
+
+    def encode(
+        self,
+        image,
+        training=False
+    ):
+
+        return self(
+            image,
+            training=training
+        )
+
+
+    def get_config(self):
+
+        config = super().get_config()
+
+        config.update({
+            "embed_dim": self.embed_dim
+        })
+
+        return config
 
 
 if __name__ == "__main__":
@@ -66,10 +123,15 @@ if __name__ == "__main__":
     )
 
     output = encoder.encode(
-        sample_image
+        sample_image,
+        training=False
     )
 
     print(
         "Vision Encoder output shape:",
         output.shape
+    )
+
+    encoder.enable_fine_tuning(
+        unfreeze_last_n=30
     )

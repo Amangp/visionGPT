@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-
+from api.sessions import router as sessions_router
 from api.health import router as health_router
 from api.vision import router as vision_router
 from core.config import settings
@@ -28,7 +28,9 @@ app.include_router(
     vision_router,
     prefix="/api"
 )
-
+app.include_router(
+    sessions_router
+)
 
 register_exception_handlers(app)
 

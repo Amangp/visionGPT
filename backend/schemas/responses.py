@@ -7,6 +7,8 @@ class VisionResponse(BaseModel):
 
     success: bool = True
 
+    session_id: str
+
     mode: Literal[
         "text",
         "describe",
@@ -18,3 +20,5 @@ class VisionResponse(BaseModel):
     answer: str
 
     model_ready: bool
+
+    image_in_session: bool

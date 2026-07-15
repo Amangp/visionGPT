@@ -2,65 +2,41 @@ import tensorflow as tf
 
 
 # =========================================================
-# MASKED LOSS
+# TOKEN LOSS
 # =========================================================
 
-def masked_loss(
-        y_true,
-        y_pred
+def token_loss(
+    y_true,
+    y_pred
 ):
 
     loss_function = (
+
         tf.keras.losses
         .SparseCategoricalCrossentropy(
+
             from_logits=True,
+
             reduction="none"
-        )
-    )
 
-
-    loss = loss_function(
-        y_true,
-        y_pred
-    )
-
-
-    mask = tf.cast(
-
-        tf.not_equal(
-            y_true,
-            0
-        ),
-
-        dtype=loss.dtype
-
-    )
-
-
-    loss = loss * mask
-
-
-    return (
-
-        tf.reduce_sum(loss)
-
-        /
-
-        tf.maximum(
-            tf.reduce_sum(mask),
-            1.0
         )
 
     )
 
 
-# =========================================================
-# MASKED ACCURACY
-# =========================================================
-
-def masked_accuracy(
+    return loss_function(
         y_true,
         y_pred
+    )
+
+
+# =========================================================
+# TOKEN ACCURACY
+# =========================================================
+
+def token_accuracy(
+    y_true,
+    y_pred
 ):
 
     predicted_tokens = tf.argmax(
@@ -90,52 +66,11 @@ def masked_accuracy(
     )
 
 
-    mask = tf.not_equal(
-
-        y_true,
-
-        0
-
-    )
-
-
-    matches = tf.logical_and(
-
-        matches,
-
-        mask
-
-    )
-
-
-    matches = tf.cast(
+    return tf.cast(
 
         matches,
 
         tf.float32
-
-    )
-
-
-    mask = tf.cast(
-
-        mask,
-
-        tf.float32
-
-    )
-
-
-    return (
-
-        tf.reduce_sum(matches)
-
-        /
-
-        tf.maximum(
-            tf.reduce_sum(mask),
-            1.0
-        )
 
     )
 
@@ -148,9 +83,9 @@ class Trainer:
 
 
     def __init__(
-            self,
-            model,
-            learning_rate=0.0001
+        self,
+        model,
+        learning_rate=0.0001
     ):
 
 
@@ -160,32 +95,48 @@ class Trainer:
         self.optimizer = (
 
             tf.keras.optimizers.Adam(
-                learning_rate
+
+                learning_rate=learning_rate
+
             )
 
         )
 
 
-    def compile(self):
+    # =====================================================
+    # COMPILE
+    # =====================================================
+
+    def compile(
+        self
+    ):
 
 
         self.model.compile(
 
             optimizer=self.optimizer,
 
-            loss=masked_loss,
+            loss=token_loss,
 
-            metrics=[
-                masked_accuracy
+            weighted_metrics=[
+
+                token_accuracy
+
             ]
 
         )
 
 
+    # =====================================================
+    # TRAIN
+    # =====================================================
+
     def train(
-            self,
-            dataset,
-            epochs=10
+        self,
+        dataset,
+        validation_data=None,
+        epochs=10,
+        callbacks=None
     ):
 
 
@@ -193,7 +144,11 @@ class Trainer:
 
             dataset,
 
-            epochs=epochs
+            validation_data=validation_data,
+
+            epochs=epochs,
+
+            callbacks=callbacks
 
         )
 
