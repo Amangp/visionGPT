@@ -110,7 +110,9 @@ class TransformerDecoderBlock(
                 dropout_rate
             )
         )
-
+        self.embedding_dropout = tf.keras.layers.Dropout(
+            dropout_rate
+        )
 
     # =====================================================
     # CALL
@@ -392,7 +394,16 @@ class AnswerDecoder(
         sequence_length = tf.shape(
             text_tokens
         )[1]
+        padding_mask = tf.not_equal(
+            text_tokens,
+            0
+        )
 
+        padding_mask = padding_mask[
+            :,
+            tf.newaxis,
+            :
+        ]
 
         # =================================================
         # TOKEN EMBEDDING
@@ -402,45 +413,35 @@ class AnswerDecoder(
             text_tokens
         )
 
-
-        # =================================================
-        # POSITION IDS
-        # =================================================
-
-        positions = tf.range(
-
-            start=0,
-
-            limit=sequence_length,
-
-            delta=1
-
-        )
-
-
-        # =================================================
-        # POSITION EMBEDDING
-        # =================================================
-
-        position_embeddings = (
-            self.position_embedding(
-                positions
+        token_embeddings = (
+            token_embeddings
+            * tf.math.sqrt(
+                tf.cast(
+                    self.embed_dim,
+                    tf.float32
+                )
             )
         )
 
+        positions = tf.range(
+            start=0,
+            limit=sequence_length,
+            delta=1
+        )
 
-        # =================================================
-        # COMBINE EMBEDDINGS
-        # =================================================
+        position_embeddings = self.position_embedding(
+            positions
+        )
 
         x = (
-
             token_embeddings
-
             +
-
             position_embeddings
+        )
 
+        x = self.embedding_dropout(
+            x,
+            training=training
         )
 
 
@@ -449,9 +450,18 @@ class AnswerDecoder(
         # =================================================
 
         causal_mask = self.create_causal_mask(
-
             sequence_length
+        )
 
+        causal_mask = causal_mask[
+            tf.newaxis,
+            :,
+            :
+        ]
+
+        attention_mask = tf.logical_and(
+            causal_mask,
+            padding_mask
         )
 
 
@@ -464,7 +474,7 @@ class AnswerDecoder(
             x = decoder_block(
                 x,
                 image_features,
-                causal_mask,
+                attention_mask,
                 training=training
             )
 
