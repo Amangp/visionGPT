@@ -1,0 +1,101 @@
+[33mcommit c9507c587fcba78634bfa99d9abaa79c1111a475[m
+Author: Amangp <166824108+Amangp@users.noreply.github.com>
+Date:   Fri Jul 17 21:58:04 2026 +0530
+
+    changes
+
+ .git - Copy/COMMIT_EDITMSG                         |    1 [32m+[m
+ .git - Copy/FETCH_HEAD                             |    1 [32m+[m
+ .git - Copy/HEAD                                   |    1 [32m+[m
+ .git - Copy/ORIG_HEAD                              |    1 [32m+[m
+ .git - Copy/config                                 |   14 [32m+[m
+ .git - Copy/description                            |    1 [32m+[m
+ .git - Copy/gk/config                              |    3 [32m+[m
+ .git - Copy/hooks/applypatch-msg.sample            |   15 [32m+[m
+ .git - Copy/hooks/commit-msg.sample                |   24 [32m+[m
+ .git - Copy/hooks/fsmonitor-watchman.sample        |  174 [32m+[m
+ .git - Copy/hooks/post-update.sample               |    8 [32m+[m
+ .git - Copy/hooks/pre-applypatch.sample            |   14 [32m+[m
+ .git - Copy/hooks/pre-commit.sample                |   49 [32m+[m
+ .git - Copy/hooks/pre-merge-commit.sample          |   13 [32m+[m
+ .git - Copy/hooks/pre-push.sample                  |   53 [32m+[m
+ .git - Copy/hooks/pre-rebase.sample                |  169 [32m+[m
+ .git - Copy/hooks/pre-receive.sample               |   24 [32m+[m
+ .git - Copy/hooks/prepare-commit-msg.sample        |   42 [32m+[m
+ .git - Copy/hooks/push-to-checkout.sample          |   78 [32m+[m
+ .git - Copy/hooks/sendemail-validate.sample        |   77 [32m+[m
+ .git - Copy/hooks/update.sample                    |  128 [32m+[m
+ .git - Copy/index                                  |  Bin [31m0[m -> [32m92876[m bytes
+ .git - Copy/info/exclude                           |    6 [32m+[m
+ .../00/1085b0e87b2c7fd32fde6e3b450d86dca641a8      |  Bin [31m0[m -> [32m3496[m bytes
+ .../00/5320038539afa625fa3895a13d38a1640cbb58      |  Bin [31m0[m -> [32m1278[m bytes
+ .../00/a16423f448e7773f5e6dc9b365efe80f40a778      |  Bin [31m0[m -> [32m844[m bytes
+ .../00/b3b5be76a1f9d76f288470c830b60602000bd6      |  Bin [31m0[m -> [32m163643[m bytes
+ .../00/c9743ed0a2664039060ef149d30f165bf2f465      |  Bin [31m0[m -> [32m2679[m bytes
+ .../00/d34bc7d8c85126dbae716ebfa48e35b0833222      |  Bin [31m0[m -> [32m686[m bytes
+ .../01/328592b2dad80f4d16c55cd9db9829b3c650f1      |  Bin [31m0[m -> [32m261[m bytes
+ .../01/3ad2eeac58d8486491fd7d14d3701d7a6e1486      |  Bin [31m0[m -> [32m2038[m bytes
+ .../01/48f157ff3bf8bd728c82f49cd3d1cd9cb5a43e      |  Bin [31m0[m -> [32m49[m bytes
+ .../01/864511b0f52a6bf944f70b5e15b75364791935      |  Bin [31m0[m -> [32m324[m bytes
+ .../01/988350f0afe6b6c434f741eac79d20075082ee      |  Bin [31m0[m -> [32m221[m bytes
+ .../01/e8377d268304677b4a5d133fc3a218be9a78df      |  Bin [31m0[m -> [32m400097[m bytes
+ .../02/3b2fcc319fe415cdbc7a0989eb5374eea8c6d5      |  Bin [31m0[m -> [32m107724[m bytes
+ .../02/3f3ed509fa71b62e81518434b7fff6eeed09f8      |  Bin [31m0[m -> [32m2171[m bytes
+ .../02/57c31570434b045ee4e3db086703b92f0f17af      |  Bin [31m0[m -> [32m497[m bytes
+ .../02/58a380f4acb6abb3b9e8d1bea70836b69a2559      |  Bin [31m0[m -> [32m1533[m bytes
+ .../02/5fc73e6f3a9754173248c56121f6140083a6e7      |  Bin [31m0[m -> [32m1084[m bytes
+ .../02/76a3fae10eb367af326543bcd69e62432b2f7b      |  Bin [31m0[m -> [32m4586[m bytes
+ .../02/8288d5c05c5d1fc6f02e01d45eacc235675d2a      |  Bin [31m0[m -> [32m213738[m bytes
+ .../02/a60de53b45ecfe3d645150a8f41376ba82567d      |  Bin [31m0[m -> [32m3572[m bytes
+ .../03/035fef0b2fcd16dd3c977bd9bbcb0f1e3e669f      |  Bin [31m0[m -> [32m220583[m bytes
+ .../03/1cb77c17ba8d8a983448268851d612e05e80d1      |  Bin [31m0[m -> [32m7123[m bytes
+ .../03/6167dd951e70ad543775529d5ce3f6d6544c71      |  Bin [31m0[m -> [32m757[m bytes
+ .../03/6938532a858f6f7f699745e326f44eb1c536c3      |  Bin [31m0[m -> [32m992245[m bytes
+ .../03/8dcadf934af20dbe11dcb13ba324ceb30bf90d      |  Bin [31m0[m -> [32m11657[m bytes
+ .../04/50d1eae9c8955573e3b51736edfa65d47c6fcb      |  Bin [31m0[m -> [32m252897629[m bytes
+ .../04/a4abe5a9e61596f97dc3d1b0b3da93a558158f      |  Bin [31m0[m -> [32m334[m bytes
+ .../04/c8c719a563e5d2f97c30b83aa564d77a7166fb      |  Bin [31m0[m -> [32m785583[m bytes
+ .../05/10a21897bc5c0b2961ac34a69a159012b48fa0      |  Bin [31m0[m -> [32m337[m bytes
+ .../05/bfc010c232d0187dedb4446a7b0b278bd504ef      |  Bin [31m0[m -> [32m334[m bytes
+ .../06/013f385bb16a3e985c27281184343534497240      |  Bin [31m0[m -> [32m225[m bytes
+ .../06/3225d32125f8d0c3674ef801dc43cc99ce10e6      |    2 [32m+[m
+ .../06/c9f69debd05e53c3b6053a905805e616c61fad      |  Bin [31m0[m -> [32m86[m bytes
+ .../06/f0444fa9407a19117beced3ab7e59c2e719630      |  Bin [31m0[m -> [32m118154[m bytes
+ .../07/03564993e3bccb797a79968d19f45eef3cebff      |  Bin [31m0[m -> [32m537[m bytes
+ .../07/806f8af9dd3253ebdb5710b67e73124aea4941      |  Bin [31m0[m -> [32m691[m bytes
+ .../07/811aab27ad7fcd2303883024243e2f52c2bbcb      |  Bin [31m0[m -> [32m2188[m bytes
+ .../07/90fd63748a0ca0a6a8678f973d5ab666bd3731      |  Bin [31m0[m -> [32m131014[m bytes
+ .../07/aa9501a1def78238d6082c718a68240d9dd558      |  Bin [31m0[m -> [32m108149[m bytes
+ .../07/b065155e8cab925882d7d4d88780a60315637b      |  Bin [31m0[m -> [32m90[m bytes
+ .../08/858659813036bff7504de9385fc683eeecf0be      |  Bin [31m0[m -> [32m175[m bytes
+ .../08/8f9ed0d7e4c821c3d14ec8670a6a1f052ff80a      |  Bin [31m0[m -> [32m86[m bytes
+ .../08/a94e9801092aa6007d8726ed3dfab3ecfa4976      |    1 [32m+[m
+ .../08/e46f7a9385d4e79f3b00ea142aecc276a9065d      |  Bin [31m0[m -> [32m270[m bytes
+ .../09/2c2bf159ec7f17ce77f2758ea98ecce60b5ad8      |    1 [32m+[m
+ .../09/37a4faf8cf2358ed1ec8a4f12b8260e493fd24      |  Bin [31m0[m -> [32m2167[m bytes
+ .../09/7e86de0720126a1390d728f7e50a4f89cac77f      |  Bin [31m0[m -> [32m1165[m bytes
+ .../09/9f6e75d5450c85ec5c95694deebd753009a454      |    4 [32m+[m
+ .../09/a8a2e126c8bb009dbbe61c5c4bd5e358744996      |  Bin [31m0[m -> [32m229[m bytes
+ .../0a/0f4596c566420135991713ee75ca29c4cff3ed      |  Bin [31m0[m -> [32m3128[m bytes
+ .../0a/2a5fc6eed1dd7516c8615e9bd52e42cf227854      |  Bin [31m0[m -> [32m351[m bytes
+ .../0a/523bece3e50519653c4d7a38399baa487fefa1      |  Bin [31m0[m -> [32m645[m bytes
+ .../0a/b6a6456c9289c7ad2e98a0ae5242a9fa3ca9bc      |  Bin [31m0[m -> [32m309[m bytes
+ .../0a/cc8cb84bd4d28363c4e33e7ff18d691bebfa48      |  Bin [31m0[m -> [32m3037[m bytes
+ .../0a/eab0b21b522fbfff7c220c818a79d6e0b2ba43      |  Bin [31m0[m -> [32m1324[m bytes
+ .../0a/ec670605fde946b4eeeeb1780845dea7ecf562      |  Bin [31m0[m -> [32m496[m bytes
+ .../0b/03c53fcc7d82bdd985ad0127545b97ee504dfc      |  Bin [31m0[m -> [32m54440[m bytes
+ .../0b/5f7005ab4c1f74a6472731f0b52c53645b1c43      |  Bin [31m0[m -> [32m26[m bytes
+ .../0b/a0bc9a87ec919956e408210ae83e86e8f5d0be      |  Bin [31m0[m -> [32m394[m bytes
+ .../0b/e46db7e5c104ccf4d163c060bfd62091dc810d      |  Bin [31m0[m -> [32m69[m bytes
+ .../0b/e74537494dc2cf18c2e3b318ffd22b886aef6b      |  Bin [31m0[m -> [32m276[m bytes
+ .../0c/352fcb230f58820c275c70624809d001ed1677      |  Bin [31m0[m -> [32m997[m bytes
+ .../0c/8f30f3b9aac5ece3b8d868c28eec7b78bb9666      |  Bin [31m0[m -> [32m2507[m bytes
+ .../0c/bea976c3f646e268fff617fd6f148a61e50761      |  Bin [31m0[m -> [32m197[m bytes
+ .../0d/162647d55777d7afa1bf1e44a6c200a3f82419      |  Bin [31m0[m -> [32m439[m bytes
+ .../0d/1f7edf5dc6343538563a8caa7de6829752c4f9      |  Bin [31m0[m -> [32m87[m bytes
+ .../0d/312ba787676cb27e921f3fac1aad257b00ebeb      |  Bin [31m0[m -> [32m1762[m bytes
+ .../0d/42453ce51e70cf883ee2bbdb49d2490a75ec52      |  Bin [31m0[m -> [32m138[m bytes
+ .../0d/501cf9e9cef5859f3c1bf844bc7280ce1e7aaa      |  Bin [31m0[m -> [32m9065[m bytes
+ .../0d/886fee4102d5ef24a00842d5d35c36cad6fac9      |  Bin [31m0[m -> [32m656[m bytes
+ .../0d/925111fa6e611ae919df8bb30bcda0f248c5b6      |  Bin [31m0[m -> [32m6818[m bytes
+ .../0d/99b0f539ff5f819b167013c48726180cd83d49      |  
