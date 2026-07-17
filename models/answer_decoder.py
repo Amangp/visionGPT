@@ -415,19 +415,16 @@ class AnswerDecoder(
         # TOKEN EMBEDDING
         # =================================================
 
-        token_embeddings = self.embedding(
-            text_tokens
+
+
+        token_embeddings = self.embedding(text_tokens)
+
+        scale = tf.cast(
+            tf.math.sqrt(tf.cast(self.embed_dim, tf.float32)),
+            token_embeddings.dtype,
         )
 
-        token_embeddings = (
-            token_embeddings
-            * tf.math.sqrt(
-                tf.cast(
-                    self.embed_dim,
-                    tf.float32
-                )
-            )
-        )
+        token_embeddings = token_embeddings * scale
 
         positions = tf.range(
             start=0,

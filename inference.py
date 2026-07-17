@@ -959,7 +959,7 @@ if __name__ == "__main__":
     MODEL_PATH = (
 
         
-        "checkpoints//visiongpt_v4_best_2026_07_15_19_01.weights.h5"
+        "checkpoints//visiongpt_v4_best_2026_07_17_09_56.weights.h5"
         
 
     )
@@ -1132,30 +1132,28 @@ if __name__ == "__main__":
             ] = first_token_logits
 
 
-            probabilities = tf.nn.softmax(
-                first_token_logits
-            ).numpy()
+            probabilities = tf.nn.softmax(first_token_logits).numpy()
 
+            top_indices = np.argsort(probabilities)[-10:][::-1]
 
-            top_indices = np.argsort(
-                probabilities
-            )[-10:][::-1]
+            print("\n========================================")
+            print("FIRST ANSWER TOKEN DIAGNOSTIC")
+            print("========================================")
 
+            print("Expected prompt:")
+            print("startseq taskcaption describe the image answerseq")
 
-            print(
-                "Top first-token predictions:"
-            )
+            print("\nTop 10 predictions:\n")
 
-
-            for index in top_indices:
-
+            for rank, index in enumerate(top_indices, 1):
                 print(
-
-                    f"{vocabulary[index]:20s} "
-
-                    f"{probabilities[index]:.6f}"
-
+                    f"{rank:2d}. "
+                    f"ID={index:4d} "
+                    f"WORD={vocabulary[index]:20s} "
+                    f"PROB={probabilities[index]:.6f}"
                 )
+
+            print("========================================\n")
 
 
         # =====================================================

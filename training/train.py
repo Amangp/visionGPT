@@ -42,13 +42,12 @@ from dataset_tools.textvqa_adapter import TextVQAAdapter
 
 COCO_ANNOTATION_PATH = (
     "Dataset/COCO/"
-    "annotations_trainval2017/"
     "annotations/"
     "captions_train2017.json"
 )
 
 COCO_IMAGE_DIRECTORY = (
-    "Dataset/COCO/train2017/train2017"
+    "Dataset/COCO/train2017"
 )
 
 TEXTVQA_ANNOTATION_PATH = (
@@ -280,7 +279,11 @@ def main():
         .vectorizer
         .get_vocabulary()
     )
+    vocab = text_processor.vectorizer.get_vocabulary()
 
+    print("\nFirst 30 vocabulary tokens:\n")
+    for i in range(30):
+        print(i, vocab[i])
     vocab_size = len(vocabulary)
 
     word_to_index = {
@@ -330,7 +333,22 @@ def main():
 
     train_tokens = text_processor.process(train_texts)
     val_tokens = text_processor.process(val_texts)
+    print("\n================ SAMPLE TRAINING EXAMPLE ================\n")
 
+    print("Original text:")
+    print(train_texts[0])
+
+    print("\nToken IDs:")
+    print(train_tokens[0].numpy())
+
+    print("\nDecoded:")
+    print(text_processor.decode(train_tokens[0].numpy()))
+
+    print("\nVocabulary IDs:")
+    special = text_processor.get_special_token_ids()
+    print(special)
+
+    print("\n=========================================================\n")
     print("Train token shape:", train_tokens.shape)
     print("Validation token shape:", val_tokens.shape)
 
