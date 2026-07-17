@@ -294,6 +294,12 @@ class AnswerDecoder(
             )
         )
 
+        self.embedding_dropout = (
+            tf.keras.layers.Dropout(
+                dropout_rate
+            )
+        )
+
 
         # =================================================
         # DECODER BLOCKS
