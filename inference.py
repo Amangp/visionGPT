@@ -137,9 +137,11 @@ class VisionGPTInference:
             "\n[3/4] Creating VisionGPT..."
         )
 
+        self.mask_token_id = self.vocab.index("[UNK]")
+
         self.model = VisionGPT(
             vocab_size=self.vocab_size,
-            mask_token_id=self.vocab.index("[UNK]"),
+            mask_token_id=self.mask_token_id,
             start_token_id=self.start_token,
             end_token_id=self.end_token,
             answer_token_id=self.answer_token,
@@ -235,7 +237,7 @@ class VisionGPTInference:
 
 
         print(
-            "\nVisionGPT v4 ready 🚀"
+            "\nVisionGPT v4 ready"
         )
 
 
@@ -414,450 +416,264 @@ class VisionGPTInference:
     # =====================================================
     # CAPTION GENERATION - BEAM SEARCH
     # =====================================================
-
     def generate(
         self,
         image_path,
         max_length=29,
+        method="beam",
         beam_width=5,
+        temperature=1.0,
+        top_k=50,
+        top_p=0.9,
         repetition_penalty=1.2,
         no_repeat_ngram_size=3,
         length_penalty=0.7
     ):
+        """Generate text caption or VQA answer for an input image.
 
-        if not os.path.exists(
-            image_path
-        ):
+        Supports both Beam Search and Temperature/Top-K/Top-P Sampling.
+        """
+        if not os.path.exists(image_path):
+            raise FileNotFoundError(f"Image not found: {image_path}")
 
-            raise FileNotFoundError(
+        # 1. Preprocess Image
+        image = self.image_processor.process(image_path)
+        image = tf.expand_dims(image, axis=0)
 
-                f"Image not found: "
-                f"{image_path}"
-
-            )
-
-
-        # =================================================
-        # PROCESS IMAGE
-        # =================================================
-
-        image = self.image_processor.process(
-            image_path
-        )
-
-        image = tf.expand_dims(
-
-            image,
-
-            axis=0
-
-        )
-
-
-        # =================================================
-        # INITIAL BEAM
-        #
-        # beam:
-        # (
-        #     generated token IDs,
-        #     cumulative log probability,
-        #     finished
-        # )
-        # =================================================
-
-        prompt = (
-            "describe the image"
-        )
-
-        prompt_tokens = self.text_processor.process(
-            [prompt]
-        ).numpy()[0]
-
-        prompt_tokens = [
-            int(token)
-            for token in prompt_tokens
-            if token > 0
-        ]
+        # 2. Build Initial Sequence
+        prompt = "describe the image"
+        prompt_tokens = self.text_processor.process([prompt]).numpy()[0]
+        prompt_tokens = [int(token) for token in prompt_tokens if token > 0]
 
         initial_tokens = [
-
             self.start_token,
-
             self.task_caption_token,
-
             *prompt_tokens,
-
             self.answer_token
-
         ]
 
-        beams = [
+        if method == "beam":
+            # =================================================
+            # BEAM SEARCH
+            # =================================================
+            beams = [(initial_tokens, 0.0, False)]
 
-            (
-                initial_tokens,
-                0.0,
-                False
-            )
+            for _ in range(max_length - 1):
+                candidates = []
+                all_finished = True
 
-        ]
+                for generated, score, finished in beams:
+                    if finished:
+                        candidates.append((generated, score, True))
+                        continue
 
+                    all_finished = False
+                    tokens = tf.constant([generated], dtype=tf.int64)
 
-        # =================================================
-        # AUTOREGRESSIVE BEAM SEARCH
-        # =================================================
+                    predictions = self.model((image, tokens), training=False)
+                    next_token_logits = predictions[0, -1, :]
 
-        for _ in range(
-            max_length - 1
-        ):
-
-            candidates = []
-
-            all_finished = True
-
-
-            for generated, score, finished in beams:
-
-                if finished:
-
-                    candidates.append(
-
-                        (
-                            generated,
-                            score,
-                            True
-                        )
-
-                    )
-
-                    continue
-
-
-                all_finished = False
-
-
-                tokens = tf.constant(
-
-                    [
-                        generated
-                    ],
-
-                    dtype=tf.int64
-
-                )
-
-
-                predictions = self.model(
-
-                    (
-                        image,
-                        tokens
-                    ),
-
-                    training=False
-
-                )
-
-
-                next_token_logits = predictions[
-
-                    0,
-
-                    -1,
-
-                    :
-
-                ]
-
-
-                next_token_logits = (
-                    self._apply_repetition_penalty(
-
+                    next_token_logits = self._apply_repetition_penalty(
                         next_token_logits,
-
                         generated,
-
                         repetition_penalty
-
                     )
-                )
 
-
-                # Never generate padding or start token.
-
-                blocked_indices = tf.constant(
-                    [
+                    # Block special tokens
+                    blocked_indices = tf.constant([
                         0,
+                        self.mask_token_id,
                         self.start_token,
                         self.answer_token,
                         self.task_caption_token,    
                         self.task_ocr_token
-                    ],
-                    dtype=tf.int32
-                )
+                    ], dtype=tf.int32)
 
-
-                next_token_logits = (
-                    tf.tensor_scatter_nd_update(
-
+                    next_token_logits = tf.tensor_scatter_nd_update(
                         next_token_logits,
-
-                        tf.expand_dims(
-                            blocked_indices,
-                            axis=1
-                        ),
-
+                        tf.expand_dims(blocked_indices, axis=1),
                         tf.fill(
                             tf.shape(blocked_indices),
-                            tf.cast(
-                                -1e9,
-                                next_token_logits.dtype
+                            tf.cast(-1e9, next_token_logits.dtype)
+                        )
+                    )
+
+                    log_probs = tf.nn.log_softmax(next_token_logits)
+                    search_width = min(
+                        self.vocab_size,
+                        max(beam_width * 4, beam_width)
+                    )
+
+                    top_values, top_indices = tf.math.top_k(log_probs, k=search_width)
+                    top_values = top_values.numpy()
+                    top_indices = top_indices.numpy()
+
+                    accepted = 0
+                    for token_log_prob, token_id in zip(top_values, top_indices):
+                        token_id = int(token_id)
+
+                        if (token_id != self.end_token and 
+                            self._creates_repeated_ngram(
+                                generated,
+                                token_id,
+                                no_repeat_ngram_size
                             )
+                        ):
+                            continue
+
+                        new_generated = generated + [token_id]
+                        new_score = score + float(token_log_prob)
+                        new_finished = (token_id == self.end_token)
+
+                        candidates.append((new_generated, new_score, new_finished))
+                        accepted += 1
+
+                        if accepted >= beam_width:
+                            break
+
+                if all_finished or not candidates:
+                    break
+
+                def normalized_score(beam):
+                    generated, score, _ = beam
+                    try:
+                        answer_idx = list(generated).index(self.answer_token)
+                        generated_length = max(len(generated) - (answer_idx + 1), 1)
+                    except ValueError:
+                        generated_length = max(len(generated) - 1, 1)
+
+                    return score / (generated_length ** length_penalty)
+
+                candidates.sort(key=normalized_score, reverse=True)
+                beams = candidates[:beam_width]
+
+                if all(finished for _, _, finished in beams):
+                    break
+
+            # Select Best Beam
+            finished_beams = [beam for beam in beams if beam[2]]
+            final_beams = finished_beams if finished_beams else beams
+
+            best_generated, _, _ = max(final_beams, key=normalized_score)
+            try:
+                answer_idx = best_generated.index(self.answer_token)
+                caption_tokens = best_generated[answer_idx + 1:]
+            except ValueError:
+                caption_tokens = best_generated
+
+            caption = self.decode_tokens(caption_tokens)
+            return caption
+
+        else:
+            # =================================================
+            # TEMPERATURE / TOP-K / TOP-P SAMPLING
+            # =================================================
+            generated = list(initial_tokens)
+
+            for _ in range(max_length - 1):
+                tokens = tf.constant([generated], dtype=tf.int64)
+
+                predictions = self.model((image, tokens), training=False)
+                next_token_logits = predictions[0, -1, :]
+
+                # Apply repetition penalty
+                next_token_logits = self._apply_repetition_penalty(
+                    next_token_logits,
+                    generated,
+                    repetition_penalty
+                )
+
+                # N-gram blocking
+                if no_repeat_ngram_size > 0:
+                    blocked_by_ngram = []
+                    for token_id in range(self.vocab_size):
+                        if self._creates_repeated_ngram(generated, token_id, no_repeat_ngram_size):
+                            blocked_by_ngram.append(token_id)
+                    if blocked_by_ngram:
+                        blocked_by_ngram_t = tf.constant(blocked_by_ngram, dtype=tf.int32)
+                        next_token_logits = tf.tensor_scatter_nd_update(
+                            next_token_logits,
+                            tf.expand_dims(blocked_by_ngram_t, axis=1),
+                            tf.fill(tf.shape(blocked_by_ngram_t), tf.cast(-1e9, next_token_logits.dtype))
                         )
 
+                # Block special tokens
+                blocked_indices = tf.constant([
+                    0,
+                    self.mask_token_id,
+                    self.start_token,
+                    self.answer_token,
+                    self.task_caption_token,
+                    self.task_ocr_token
+                ], dtype=tf.int32)
+
+                next_token_logits = tf.tensor_scatter_nd_update(
+                    next_token_logits,
+                    tf.expand_dims(blocked_indices, axis=1),
+                    tf.fill(
+                        tf.shape(blocked_indices),
+                        tf.cast(-1e9, next_token_logits.dtype)
                     )
                 )
 
+                # Temperature scaling
+                if temperature > 0.0:
+                    next_token_logits = next_token_logits / temperature
 
-                log_probs = tf.nn.log_softmax(
-                    next_token_logits
-                )
-
-
-                search_width = min(
-
-                    self.vocab_size,
-
-                    max(
-                        beam_width * 4,
-                        beam_width
-                    )
-
-                )
-
-
-                top_values, top_indices = tf.math.top_k(
-
-                    log_probs,
-
-                    k=search_width
-
-                )
-
-
-                top_values = top_values.numpy()
-
-                top_indices = top_indices.numpy()
-
-
-                accepted = 0
-
-
-                for token_log_prob, token_id in zip(
-
-                    top_values,
-
-                    top_indices
-
-                ):
-
-                    token_id = int(
-                        token_id
-                    )
-
-
-                    if (
-
-                        token_id != self.end_token
-
-                        and
-
-                        self._creates_repeated_ngram(
-
-                            generated,
-
-                            token_id,
-
-                            no_repeat_ngram_size
-
+                    # Top-K filtering
+                    if top_k > 0:
+                        top_values, _ = tf.math.top_k(next_token_logits, k=top_k)
+                        min_value = top_values[-1]
+                        next_token_logits = tf.where(
+                            next_token_logits < min_value,
+                            tf.cast(-1e9, next_token_logits.dtype),
+                            next_token_logits
                         )
 
-                    ):
+                    # Top-P (nucleus) filtering
+                    if top_p < 1.0:
+                        sorted_logits = tf.sort(next_token_logits, direction="DESCENDING")
+                        sorted_probs = tf.nn.softmax(sorted_logits)
+                        cumulative_probs = tf.cumsum(sorted_probs, axis=-1)
 
-                        continue
-
-
-                    new_generated = (
-                        generated
-                        +
-                        [token_id]
-                    )
-
-
-                    new_score = (
-
-                        score
-
-                        +
-
-                        float(
-                            token_log_prob
+                        sorted_indices_to_remove = cumulative_probs > top_p
+                        sorted_indices_to_remove = tf.concat(
+                            [tf.zeros((1,), dtype=tf.bool), sorted_indices_to_remove[:-1]],
+                            axis=0
                         )
 
-                    )
-
-
-                    new_finished = (
-                        token_id
-                        ==
-                        self.end_token
-                    )
-
-
-                    candidates.append(
-
-                        (
-                            new_generated,
-                            new_score,
-                            new_finished
+                        cutoff_index = tf.reduce_sum(tf.cast(tf.logical_not(sorted_indices_to_remove), tf.int32)) - 1
+                        cutoff_value = sorted_logits[cutoff_index]
+                        next_token_logits = tf.where(
+                            next_token_logits < cutoff_value,
+                            tf.cast(-1e9, next_token_logits.dtype),
+                            next_token_logits
                         )
 
-                    )
+                    # Sample next token
+                    probs = tf.nn.softmax(next_token_logits)
+                    sampled_token = tf.random.categorical(
+                        tf.expand_dims(tf.math.log(probs + 1e-10), axis=0),
+                        num_samples=1
+                    )[0, 0]
+                    next_token = int(sampled_token.numpy())
+                else:
+                    # Greedy search if temperature is 0
+                    next_token = int(tf.argmax(next_token_logits).numpy())
 
+                generated.append(next_token)
 
-                    accepted += 1
-
-
-                    if accepted >= beam_width:
-                        break
-
-
-            if all_finished:
-                break
-
-
-            if not candidates:
-                break
-
-
-            def normalized_score(beam):
-
-                generated, score, _ = beam
-
-                try:
-                    answer_idx = list(generated).index(self.answer_token)
-                    generated_length = max(len(generated) - (answer_idx + 1), 1)
-                except ValueError:
-                    generated_length = max(len(generated) - 1, 1)
-
-                return (
-
-                    score
-
-                    /
-
-                    (
-                        generated_length
-                        **
-                        length_penalty
-                    )
-
-                )
-
-
-            candidates.sort(
-
-                key=normalized_score,
-
-                reverse=True
-
-            )
-
-
-            beams = candidates[
-                :beam_width
-            ]
-
-
-            if all(
-                finished
-                for _, _, finished in beams
-            ):
-
-                break
-
-
-        # =================================================
-        # SELECT BEST BEAM
-        # =================================================
-
-        finished_beams = [
-
-            beam
-
-            for beam in beams
-
-            if beam[2]
-
-        ]
-
-
-        final_beams = (
-
-            finished_beams
-
-            if finished_beams
-
-            else beams
-
-        )
-
-
-        def final_score(beam):
-
-            generated, score, _ = beam
+                if next_token == self.end_token:
+                    break
 
             try:
-                answer_idx = list(generated).index(self.answer_token)
-                generated_length = max(len(generated) - (answer_idx + 1), 1)
+                answer_idx = generated.index(self.answer_token)
+                caption_tokens = generated[answer_idx + 1:]
             except ValueError:
-                generated_length = max(len(generated) - 1, 1)
+                caption_tokens = generated
 
-            return (
-
-                score
-
-                /
-
-                (
-                    generated_length
-                    **
-                    length_penalty
-                )
-
-            )
-
-
-        best_generated, _, _ = max(
-
-            final_beams,
-
-            key=final_score
-
-        )
-
-
-        try:
-            answer_idx = best_generated.index(self.answer_token)
-            caption_tokens = best_generated[answer_idx + 1:]
-        except ValueError:
-            caption_tokens = best_generated
-
-        caption = self.decode_tokens(
-            caption_tokens
-        )
-
-
-        return caption
+            caption = self.decode_tokens(caption_tokens)
+            return caption
 
 
     # =====================================================
@@ -955,27 +771,37 @@ class VisionGPTInference:
 
 if __name__ == "__main__":
 
-
-    MODEL_PATH = (
-
-        
-        "checkpoints//visiongpt_v4_best_2026_07_17_09_56.weights.h5"
-        
-
-    )
-
-
-    VOCAB_PATH = (
-        "vocab_v4.json"
-    )
-
+    import os
+    import glob
+    VOCAB_PATH = "vocab_v4.json"
+    
+    # Find the latest saved weights file in checkpoints/
+    weight_files = glob.glob("checkpoints/visiongpt_v4_best_*.weights.h5")
+    if weight_files:
+        # Sort by modification time to get the newest
+        MODEL_PATH = max(weight_files, key=os.path.getmtime)
+        print(f"\n[Diagnostic] Loading latest trained weights: {MODEL_PATH}")
+    else:
+        MODEL_PATH = "checkpoints/visiongpt_v5_temp.weights.h5"
+        if not os.path.exists(MODEL_PATH):
+            import json
+            with open(VOCAB_PATH, "r", encoding="utf-8") as f:
+                vocab_data = json.load(f)
+                v_size = len(vocab_data)
+            print(f"\n[Diagnostic] No weights file found at {MODEL_PATH}. Building model with vocab_size={v_size} and saving temporary weights...")
+            os.makedirs("checkpoints", exist_ok=True)
+            from models.visiongpt import VisionGPT
+            import tensorflow as tf
+            model = VisionGPT(vocab_size=v_size)
+            dummy_img = tf.zeros((1, 224, 224, 3))
+            dummy_txt = tf.zeros((1, 5), dtype=tf.int64)
+            _ = model((dummy_img, dummy_txt), training=False)
+            model.save_weights(MODEL_PATH)
+            print("[Diagnostic] Temporary random weights saved.")
 
     bot = VisionGPTInference(
-
         model_path=MODEL_PATH,
-
         vocab_path=VOCAB_PATH
-
     )
     # =========================================================
     # VISUAL CONDITIONING DIAGNOSTIC
@@ -1011,7 +837,7 @@ if __name__ == "__main__":
 
         image_paths = {
             "tree": "test_images/tree.jpg",
-            "dinosaur": "test_images/dinosaur.jpg",
+            "bike": "test_images/bike.jpg",
             "person": "test_images/person.jpg",
             "car": "test_images/car.jpg",
             "dog": "test_images/dog.jpg"
@@ -1307,7 +1133,7 @@ if __name__ == "__main__":
 
         "test_images/tree.jpg",
 
-        "test_images/dinosaur.jpg",
+        "test_images/bike.jpg",
 
         "test_images/person.jpg",
 

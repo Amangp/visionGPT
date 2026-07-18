@@ -65,15 +65,18 @@ TEXTVQA_IMAGE_DIRECTORY = (
 COCO_LIMIT = 100000
 
 BATCH_SIZE = 16
-EPOCHS = 25
-VALIDATION_SPLIT = 0.10
+PHASE1_EPOCHS = 8        # frozen backbone: let decoder learn task format first
+PHASE2_EPOCHS = 40       # unfrozen backbone: real visual grounding happens here
+VALIDATION_SPLIT = 0.20
 RANDOM_SEED = 42
 
 VOCAB_SIZE = 10000
 MAX_LENGTH = 50
 
 CONTEXT_DROPOUT_RATE = 0.10
-LEARNING_RATE = 0.0001
+PHASE1_LEARNING_RATE = 0.0001
+PHASE2_LEARNING_RATE = 0.00002   # lower LR once backbone unfreezes
+UNFREEZE_LAST_N = 30
 
 
 # =========================================================
@@ -182,13 +185,10 @@ def main():
         limit=COCO_LIMIT
     )
     textvqa_samples = textvqa_adapter.load()
-    print(type(coco_samples))
-    print(coco_samples[:5])
+    # print(type(coco_samples))
+    # print(coco_samples[:5])
     print("Selected COCO samples:", len(coco_samples))
     print("TextVQA samples:", len(textvqa_samples)) 
-
-    print("Selected COCO samples:", len(coco_samples))
-    print("Selected TextVQA samples:", len(textvqa_samples))
 
     # =====================================================
     # 4. IMAGE-LEVEL SPLIT PER DATASET
@@ -261,8 +261,8 @@ def main():
         for sample in val_samples
     ]
 
-    print("Example training sequence:")
-    print(train_texts[0])
+    # print("Example training sequence:")
+    # print(train_texts[0])
 
     # =====================================================
     # 6. BUILD V4 VOCABULARY
@@ -317,7 +317,7 @@ def main():
         "task_ocr_token_id"
     ]
 
-    print("Vocabulary size:", vocab_size)
+    # print("Vocabulary size:", vocab_size)
     print("Mask token ID:", mask_token_id)
     print("Start token ID:", start_token_id)
     print("End token ID:", end_token_id)
@@ -333,22 +333,22 @@ def main():
 
     train_tokens = text_processor.process(train_texts)
     val_tokens = text_processor.process(val_texts)
-    print("\n================ SAMPLE TRAINING EXAMPLE ================\n")
+    # print("\n================ SAMPLE TRAINING EXAMPLE ================\n")
 
-    print("Original text:")
-    print(train_texts[0])
+    # print("Original text:")
+    # print(train_texts[0])
 
-    print("\nToken IDs:")
-    print(train_tokens[0].numpy())
+    # print("\nToken IDs:")
+    # print(train_tokens[0].numpy())
 
-    print("\nDecoded:")
-    print(text_processor.decode(train_tokens[0].numpy()))
+    # print("\nDecoded:")
+    # print(text_processor.decode(train_tokens[0].numpy()))
 
-    print("\nVocabulary IDs:")
-    special = text_processor.get_special_token_ids()
-    print(special)
+    # print("\nVocabulary IDs:")
+    # special = text_processor.get_special_token_ids()
+    # print(special)
 
-    print("\n=========================================================\n")
+    # print("\n=========================================================\n")
     print("Train token shape:", train_tokens.shape)
     print("Validation token shape:", val_tokens.shape)
 
@@ -375,31 +375,31 @@ def main():
         training=False
     )
 
-    for (
-        inputs,
-        targets,
-        target_mask
-    ) in train_dataset.take(1):
+    # for (
+    #     inputs,
+    #     targets,
+    #     target_mask
+    # ) in train_dataset.take(1):
 
-        images, decoder_inputs = inputs
+    #     images, decoder_inputs = inputs
 
-        print("\nVisionGPT v4 batch verification")
-        print("Image shape:", images.shape)
-        print(
-            "Decoder input shape:",
-            decoder_inputs.shape
-        )
-        print("Target shape:", targets.shape)
-        print(
-            "Target mask shape:",
-            target_mask.shape
-        )
-        print(
-            "Supervised tokens:",
-            float(
-                tf.reduce_sum(target_mask).numpy()
-            )
-        )
+    #     print("\nVisionGPT v4 batch verification")
+# print("Image shape:", images.shape)
+        # print(
+        #     "Decoder input shape:",
+        #     decoder_inputs.shape
+        # )
+        # print("Target shape:", targets.shape)
+        # print(
+        #     "Target mask shape:",
+        #     target_mask.shape
+        # )
+        # print(
+        #     "Supervised tokens:",
+        #     float(
+        #         tf.reduce_sum(target_mask).numpy()
+        #     )
+        # )
 
     # =====================================================
     # 9. CREATE VISIONGPT V4
@@ -436,45 +436,16 @@ def main():
         dtype=tf.int64
     )
 
-    output = model(
-        (
-            dummy_image,
-            dummy_text
-        ),
-        training=False
-    )
-
-    print(
-        "VisionGPT output shape:",
-        output.shape
-    )
-
-    print(
-        "VisionGPT v4 architecture built successfully"
-    )
-
-    print(
-        "\nVisionGPT v4 uses a new token vocabulary."
-    )
-
-    print(
-        "v3.2 decoder weights are not loaded because "
-        "v4 token IDs have new meanings."
-    )
-
-    print(
-        "EfficientNet remains ImageNet initialized and frozen."
-    )
 
     # =====================================================
-    # 10. COMPILE
+    # 10. COMPILE (PHASE 1 - FROZEN BACKBONE)
     # =====================================================
 
-    print("\n[10/10] Compiling VisionGPT v4...")
+    print("\n[10/10] Compiling VisionGPT v4 (phase 1: frozen backbone)...")
 
     trainer = Trainer(
         model,
-        learning_rate=LEARNING_RATE
+        learning_rate=PHASE1_LEARNING_RATE
     )
 
     trainer.compile()
@@ -492,14 +463,14 @@ def main():
         "%Y_%m_%d_%H_%M"
     )
 
-    checkpoint_path = (
-        "checkpoints/"
-        f"visiongpt_v4_best_"
-        f"{version}.weights.h5"
-    )
+    def make_callbacks(tag):
+        checkpoint_path = (
+            "checkpoints/"
+            f"visiongpt_v4_{tag}_"
+            f"{version}.weights.h5"
+        )
 
-    checkpoint_callback = (
-        tf.keras.callbacks.ModelCheckpoint(
+        checkpoint_callback = tf.keras.callbacks.ModelCheckpoint(
             filepath=checkpoint_path,
             monitor="val_loss",
             save_best_only=True,
@@ -507,68 +478,93 @@ def main():
             mode="min",
             verbose=1
         )
-    )
 
-    early_stopping = (
-        tf.keras.callbacks.EarlyStopping(
+        # Patience is intentionally generous: val_loss plateauing
+        # for a few epochs while cross-attention is still learning
+        # to use the image is expected, not a sign to stop.
+        early_stopping = tf.keras.callbacks.EarlyStopping(
             monitor="val_loss",
-            patience=3,
+            patience=8,
             restore_best_weights=True,
             verbose=1
         )
-    )
 
-    reduce_lr = (
-        tf.keras.callbacks.ReduceLROnPlateau(
+        reduce_lr = tf.keras.callbacks.ReduceLROnPlateau(
             monitor="val_loss",
             factor=0.5,
-            patience=2,
-            min_lr=1e-6,
+            patience=4,
+            min_lr=1e-7,
             verbose=1
         )
-    )
 
-    callbacks = [
-        checkpoint_callback,
-        early_stopping,
-        reduce_lr
-    ]
+        return checkpoint_path, [checkpoint_callback, early_stopping, reduce_lr]
+
+    phase1_ckpt, phase1_callbacks = make_callbacks("phase1")
 
     # =====================================================
-    # TRAIN
+    # TRAIN - PHASE 1 (backbone frozen)
+    #
+    # Goal here is NOT visual grounding, just teaching the
+    # decoder the task format (start/answer/end tokens,
+    # question phrasing, general word distribution) with a
+    # cheap frozen backbone. Keep this phase short.
     # =====================================================
 
     print("\n==========================================")
-    print("VISIONGPT v4 TRAINING STARTED")
+    print("PHASE 1: TRAINING WITH FROZEN BACKBONE")
     print("==========================================")
 
     print("COCO training samples:", len(coco_train))
-    print(
-        "TextVQA training samples:",
-        len(textvqa_train)
-    )
-    print(
-        "Total training samples:",
-        len(train_samples)
-    )
-    print(
-        "Total validation samples:",
-        len(val_samples)
-    )
+    print("TextVQA training samples:", len(textvqa_train))
+    print("Total training samples:", len(train_samples))
+    print("Total validation samples:", len(val_samples))
     print("Image overlap:", len(image_overlap))
-    print(
-        "Context dropout rate:",
-        CONTEXT_DROPOUT_RATE
-    )
+    print("Context dropout rate:", CONTEXT_DROPOUT_RATE)
     print("Batch size:", BATCH_SIZE)
-    print("Maximum epochs:", EPOCHS)
-    print("Checkpoint:", checkpoint_path)
+    print("Phase 1 epochs (max):", PHASE1_EPOCHS)
+    print("Checkpoint:", phase1_ckpt)
 
-    history = trainer.train(
+    trainer.train(
         train_dataset,
         validation_data=val_dataset,
-        epochs=EPOCHS,
-        callbacks=callbacks
+        epochs=PHASE1_EPOCHS,
+        callbacks=phase1_callbacks
+    )
+
+    # =====================================================
+    # PHASE 2: UNFREEZE BACKBONE, LOWER LR, KEEP TRAINING
+    #
+    # This is the phase that actually teaches the model to
+    # use the image. Recompiling is required because the set
+    # of trainable variables changes when layers unfreeze.
+    # =====================================================
+
+    print("\n==========================================")
+    print("PHASE 2: UNFREEZING BACKBONE")
+    print("==========================================")
+
+    model.vision_encoder.enable_fine_tuning(
+        unfreeze_last_n=UNFREEZE_LAST_N
+    )
+
+    trainer2 = Trainer(
+        model,
+        learning_rate=PHASE2_LEARNING_RATE
+    )
+
+    trainer2.compile()
+
+    phase2_ckpt, phase2_callbacks = make_callbacks("phase2")
+
+    print("Phase 2 epochs (max):", PHASE2_EPOCHS)
+    print("Phase 2 learning rate:", PHASE2_LEARNING_RATE)
+    print("Checkpoint:", phase2_ckpt)
+
+    history = trainer2.train(
+        train_dataset,
+        validation_data=val_dataset,
+        epochs=PHASE2_EPOCHS,
+        callbacks=phase2_callbacks
     )
 
     # =====================================================
@@ -580,10 +576,10 @@ def main():
     print("==========================================")
 
     print("Best weights saved at:")
-    print(checkpoint_path)
+    print(phase2_ckpt)
 
     print(
-        "\nVisionGPT v4 trained successfully 🚀"
+        "\nVisionGPT v4 trained successfully"
     )
 
 

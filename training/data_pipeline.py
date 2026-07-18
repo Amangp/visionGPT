@@ -201,6 +201,27 @@ class DataPipeline:
         )
 
 
+        dataset = dataset.map(
+
+            self.prepare_example,
+
+            num_parallel_calls=tf.data.AUTOTUNE
+
+        )
+
+        # ---------------------------------------------
+        # Cache decoded images
+        #
+        # IMPORTANT: cache BEFORE shuffle. Caching after
+        # shuffle freezes the first epoch's order into the
+        # cache file, so reshuffle_each_iteration=True has
+        # no effect on epoch 2+. Caching here only saves the
+        # expensive image-decode step; shuffling below still
+        # runs fresh every epoch.
+        # ---------------------------------------------
+
+        # dataset = dataset.cache()
+
         if training:
 
             shuffle_size = min(
@@ -216,31 +237,6 @@ class DataPipeline:
             print(
                 "Shuffle buffer:",
                 shuffle_size
-            )
-
-
-        dataset = dataset.map(
-
-            self.prepare_example,
-
-            num_parallel_calls=tf.data.AUTOTUNE
-
-        )
-
-        # ---------------------------------------------
-        # Cache decoded images
-        # ---------------------------------------------
-
-        if training:
-
-            dataset = dataset.cache(
-                "cache/train.cache"
-            )
-
-        else:
-
-            dataset = dataset.cache(
-                "cache/val.cache"
             )
 
         # ---------------------------------------------

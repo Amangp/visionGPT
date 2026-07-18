@@ -139,7 +139,9 @@ class Trainer:
         callbacks=None
     ):
 
-
+        self.model.vision_encoder.enable_fine_tuning(
+            unfreeze_last_n=30
+        )
         history = self.model.fit(
 
             dataset,
